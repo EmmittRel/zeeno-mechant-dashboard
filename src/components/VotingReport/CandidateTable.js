@@ -5,6 +5,7 @@ import { useParams } from "react-router-dom";
 import { FaEye, FaEdit, FaTrash, FaDownload, FaSort } from "react-icons/fa";
 import * as XLSX from "xlsx";
 import CandidateModel from "./CandidateModal";
+import { calculateVotes } from '../AmountCalculator';
 
 const CandidateTable = () => {
   const [data, setData] = useState([]);
@@ -130,30 +131,6 @@ const CandidateTable = () => {
           (intent) => intent.status === "S"
         );
 
-        // Define currency conversion rates
-        const currencyValues = {
-          USD: 10,
-          AUD: 5,
-          GBP: 10,
-          CAD: 5,
-          EUR: 10,
-          AED: 2,
-          QAR: 2,
-          MYR: 2,
-          KWD: 2,
-          HKD: 1,
-          CNY: 1,
-          SAR: 2,
-          OMR: 20,
-          SGD: 8,
-          NOK: 1,
-          KRW: 200,
-          JPY: 20,
-          THB: 4,
-          INR: 10,
-          NPR: 10,
-        };
-
         // Calculate votes for each contestant using filtered payment intents
         const candidatesWithVotes = contestants.map((contestant) => {
           let totalVotes = 0;
@@ -177,18 +154,9 @@ const CandidateTable = () => {
                 currency = intent.currency?.toUpperCase() || "USD";
               }
 
-              const currencyValue = currencyValues[currency] || 1;
-
-              // Calculate votes based on currency
-              let votes;
-              if (["JPY", "THB", "INR", "NPR"].includes(currency)) {
-                votes = intent.amount / currencyValue;
-              } else {
-                votes = intent.amount * currencyValue;
-              }
-
-              // Truncate decimal places using Math.floor
-              totalVotes += Math.floor(votes);
+              // Use the imported utility function to calculate votes
+              const votes = calculateVotes(intent.amount, currency);
+              totalVotes += votes;
             }
           });
 

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { useToken } from "../../context/TokenContext";
+import { calculateVotes } from '../AmountCalculator'; 
 
 const VotingCardComponent = () => {
   const { token } = useToken();
@@ -103,30 +104,6 @@ const VotingCardComponent = () => {
         (intent) => intent.status === 'S'
       );
 
-      // Define currency conversion rates
-      const currencyValues = {
-        USD: 10,
-        AUD: 5,
-        GBP: 10,
-        CAD: 5,
-        EUR: 10,
-        AED: 2,
-        QAR: 2,
-        MYR: 2,
-        KWD: 2,
-        HKD: 30,
-        CNY: 1,
-        SAR: 2,
-        OMR: 20,
-        SGD: 8,
-        NOK: 1,
-        KRW: 200,
-        JPY: 20,
-        THB: 4,
-        INR: 10,
-        NPR: 10,
-      };
-
       // Fetch contestants
       const contestantsResponse = await fetch(
         `https://auth.zeenopay.com/events/contestants/?event_id=${event_id}`,
@@ -165,15 +142,8 @@ const VotingCardComponent = () => {
               currency = intent.currency?.toUpperCase() || 'USD';
             }
 
-            const currencyValue = currencyValues[currency] || 1;
-
-            let votes;
-            if (['JPY', 'THB', 'INR', 'NPR'].includes(currency)) {
-              votes = Math.floor(intent.amount / currencyValue);
-            } else {
-              votes = Math.floor(intent.amount * currencyValue);
-            }
-
+            // Use the imported utility function to calculate votes
+            const votes = calculateVotes(intent.amount, currency);
             totalVotes += votes;
           }
         });

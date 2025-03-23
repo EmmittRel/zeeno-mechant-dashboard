@@ -3,6 +3,7 @@ import Chart from "react-apexcharts";
 import { FaDownload } from "react-icons/fa";
 import { useParams } from "react-router-dom";
 import { useToken } from "../../context/TokenContext";
+import { calculateVotes } from '../AmountCalculator'; 
 
 const VoteByCountry = () => {
   const { event_id } = useParams();
@@ -17,30 +18,6 @@ const VoteByCountry = () => {
   const nepalProcessors = ["ESEWA", "KHALTI", "FONEPAY", "PRABHUPAY", "NQR", "QR"];
   const indiaProcessors = ["PHONEPE"];
   const internationalProcessors = ["PAYU", "STRIPE"];
-
-  // Define currency conversion rates
-  const currencyValues = {
-    USD: 10,
-    AUD: 5,
-    GBP: 10,
-    CAD: 5,
-    EUR: 10,
-    AED: 2,
-    QAR: 2,
-    MYR: 2,
-    KWD: 2,
-    HKD: 1,
-    CNY: 1,
-    SAR: 2,
-    OMR: 20,
-    SGD: 8,
-    NOK: 1,
-    KRW: 200,
-    JPY: 20,
-    THB: 4,
-    INR: 10,
-    NPR: 10,
-  };
 
   useEffect(() => {
     const fetchEventsData = async () => {
@@ -117,7 +94,7 @@ const VoteByCountry = () => {
         const nepalVotesData = nepalProcessors.map((processor) => {
           const processorData = nepalData.filter((item) => item.processor === processor);
           const totalVotes = processorData.reduce((sum, item) => {
-            return sum + Math.floor(item.amount / currencyValues.NPR);
+            return sum + calculateVotes(item.amount, "NPR"); // Use calculateVotes for NPR
           }, 0);
           return totalVotes;
         });
@@ -136,7 +113,7 @@ const VoteByCountry = () => {
 
         // Calculate votes for India (INR currency)
         const indiaVotes = indiaData
-          .map((item) => Math.floor(item.amount / currencyValues.INR))
+          .map((item) => calculateVotes(item.amount, "INR")) // Use calculateVotes for INR
           .reduce((a, b) => a + b, 0);
 
         // Calculate votes for International (other currencies)
@@ -152,14 +129,8 @@ const VoteByCountry = () => {
               currency = "INR"; // PAYU uses INR
             }
 
-            const currencyValue = currencyValues[currency] || 1;
-
-            // Calculate votes based on currency
-            if (["JPY", "THB", "INR", "NPR"].includes(currency)) {
-              return Math.floor(item.amount / currencyValue);
-            } else {
-              return Math.floor(item.amount * currencyValue);
-            }
+            // Use the imported utility function to calculate votes
+            return calculateVotes(item.amount, currency);
           })
           .reduce((a, b) => a + b, 0);
 

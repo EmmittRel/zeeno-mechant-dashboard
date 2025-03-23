@@ -4,6 +4,7 @@ import axios from "axios";
 import { useToken } from "../../context/TokenContext";
 import { useParams } from "react-router-dom";
 import CandidateList from "./Contestant";
+import { calculateVotes } from '../AmountCalculator'; 
 
 const VotingData = () => {
   const { token } = useToken();
@@ -65,30 +66,6 @@ const VotingData = () => {
   const [isMobile, setIsMobile] = useState(false);
   const [paymentInfo, setPaymentInfo] = useState(0);
   const [error, setError] = useState(null);
-
-  // Currency mapping
-  const currencyValues = {
-    USD: 10,
-    AUD: 5,
-    GBP: 10,
-    CAD: 5,
-    EUR: 10,
-    AED: 2,
-    QAR: 2,
-    MYR: 2,
-    KWD: 2,
-    HKD: 1,
-    CNY: 1,
-    SAR: 2,
-    OMR: 20,
-    SGD: 8,
-    NOK: 1,
-    KRW: 200,
-    JPY: 20,
-    THB: 4,
-    INR: 10,
-    NPR: 10,
-  };
 
   // Fetch event data to get payment_info
   useEffect(() => {
@@ -168,18 +145,8 @@ const VotingData = () => {
             currency = intent.currency?.toUpperCase() || "USD";
           }
 
-          const currencyValue = currencyValues[currency] || 1;
-
-          // Calculate votes based on currency
-          let votes;
-          if (["JPY", "THB", "INR", "NPR"].includes(currency)) {
-            votes = intent.amount / currencyValue;
-          } else {
-            votes = intent.amount * currencyValue;
-          }
-
-          // Truncate decimal places using Math.floor
-          const truncatedVotes = Math.floor(votes);
+          // Use the imported utility function to calculate votes
+          const votes = calculateVotes(intent.amount, currency);
 
           const updatedAt = new Date(intent.updated_at);
           const dateKey = updatedAt.toISOString().split("T")[0];
@@ -190,13 +157,13 @@ const VotingData = () => {
           }
 
           if (hours >= 0 && hours < 6) {
-            dailyVotes[dateKey][0] += truncatedVotes;
+            dailyVotes[dateKey][0] += votes;
           } else if (hours >= 6 && hours < 12) {
-            dailyVotes[dateKey][1] += truncatedVotes;
+            dailyVotes[dateKey][1] += votes;
           } else if (hours >= 12 && hours < 18) {
-            dailyVotes[dateKey][2] += truncatedVotes;
+            dailyVotes[dateKey][2] += votes;
           } else {
-            dailyVotes[dateKey][3] += truncatedVotes;
+            dailyVotes[dateKey][3] += votes;
           }
         });
 

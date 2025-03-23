@@ -4,6 +4,7 @@ import { useToken } from "../../context/TokenContext";
 import * as XLSX from "xlsx";
 import { FaEdit } from "react-icons/fa";
 import useS3Upload from "../../hooks/useS3Upload";
+import { calculateVotes } from '../AmountCalculator';
 
 const CandidateModel = ({ visible, onClose, title, candidate, isEditMode, onUpdate }) => {
   const [formData, setFormData] = useState(candidate || {});
@@ -23,30 +24,6 @@ const CandidateModel = ({ visible, onClose, title, candidate, isEditMode, onUpda
       fetchVoterDetails(candidate.id);
     }
   }, [candidate]);
-
-  // Currency conversion rates
-  const currencyValues = {
-    USD: 10,
-    AUD: 5,
-    GBP: 10,
-    CAD: 5,
-    EUR: 10,
-    AED: 2,
-    QAR: 2,
-    MYR: 2,
-    KWD: 2,
-    HKD: 1,
-    CNY: 1,
-    SAR: 2,
-    OMR: 20,
-    SGD: 8,
-    NOK: 1,
-    KRW: 200,
-    JPY: 20,
-    THB: 4,
-    INR: 10,
-    NPR: 10,
-  };
 
   // Handle image upload
   const handleImageUpload = (e) => {
@@ -68,7 +45,6 @@ const CandidateModel = ({ visible, onClose, title, candidate, isEditMode, onUpda
     try {
       let imgUrl = formData.avatar;
 
-      // If a new file is selected, upload it to S3
       if (selectedFile) {
         imgUrl = await new Promise((resolve, reject) => {
           uploadFile(
@@ -100,7 +76,7 @@ const CandidateModel = ({ visible, onClose, title, candidate, isEditMode, onUpda
   const fetchVoterDetails = async (miscKv) => {
     setIsLoadingVoters(true);
     setVoterError(null);
-  
+
     try {
       // Fetch regular payment intents
       const paymentsResponse = await fetch(
@@ -109,13 +85,13 @@ const CandidateModel = ({ visible, onClose, title, candidate, isEditMode, onUpda
           headers: { Authorization: `Bearer ${token}` },
         }
       );
-  
+
       if (!paymentsResponse.ok) {
         throw new Error("Failed to fetch payment intents data.");
       }
-  
+
       const paymentIntents = await paymentsResponse.json();
-  
+
       // Fetch QR/NQR payment intents
       const qrPaymentsResponse = await fetch(
         `https://auth.zeenopay.com/payments/qr/intents`,
@@ -123,21 +99,21 @@ const CandidateModel = ({ visible, onClose, title, candidate, isEditMode, onUpda
           headers: { Authorization: `Bearer ${token}` },
         }
       );
-  
+
       if (!qrPaymentsResponse.ok) {
         throw new Error("Failed to fetch QR/NQR payment intents data.");
       }
-  
+
       const qrPaymentIntents = await qrPaymentsResponse.json();
-  
+
       // Combine regular and QR/NQR payment intents
       const allPaymentIntents = [...paymentIntents, ...qrPaymentIntents];
-  
+
       // Filter payment intents to include only successful transactions (status === 'S')
       const successfulPaymentIntents = allPaymentIntents.filter(
         (intent) => intent.status === "S"
       );
-  
+
       // Fetch events data
       const eventsResponse = await fetch(
         `https://auth.zeenopay.com/events/`,
@@ -145,23 +121,23 @@ const CandidateModel = ({ visible, onClose, title, candidate, isEditMode, onUpda
           headers: { Authorization: `Bearer ${token}` },
         }
       );
-  
+
       if (!eventsResponse.ok) {
         throw new Error("Failed to fetch events data.");
       }
-  
+
       const events = await eventsResponse.json();
-  
+
       // Match intents with the candidate's misc_kv and intent type "V"
       const matchedIntents = successfulPaymentIntents.filter(
         (intent) => String(intent.intent_id) === String(miscKv) && intent.intent === "V"
       );
-  
+
       // Calculate votes and prepare voter list
       const voterList = matchedIntents.map((intent) => {
         let currency = "USD";
         const processor = intent.processor?.toUpperCase();
-  
+
         // Determine the currency based on the processor
         if (
           ["ESEWA", "KHALTI", "FONEPAY", "PRABHUPAY", "NQR", "QR"].includes(
@@ -174,17 +150,10 @@ const CandidateModel = ({ visible, onClose, title, candidate, isEditMode, onUpda
         } else if (processor === "STRIPE") {
           currency = intent.currency?.toUpperCase() || "USD";
         }
-  
-        const currencyValue = currencyValues[currency] || 1;
-  
-        // Calculate votes based on currency
-        let votes;
-        if (["JPY", "THB", "INR", "NPR"].includes(currency)) {
-          votes = Math.floor(intent.amount / currencyValue);
-        } else {
-          votes = Math.floor(intent.amount * currencyValue);
-        }
-  
+
+        // Use the imported utility function to calculate votes
+        const votes = calculateVotes(intent.amount, currency);
+
         // Determine payment method
         let paymentMethod;
         if (processor === "NQR") {
@@ -200,7 +169,7 @@ const CandidateModel = ({ visible, onClose, title, candidate, isEditMode, onUpda
         } else {
           paymentMethod = processor || "N/A";
         }
-  
+
         return {
           name: intent.name,
           phone_no: intent.phone_no,
@@ -209,10 +178,10 @@ const CandidateModel = ({ visible, onClose, title, candidate, isEditMode, onUpda
           transactionTime: intent.updated_at,
         };
       });
-  
+
       // Sort voter list by transaction time (newest first)
       voterList.sort((a, b) => new Date(b.transactionTime) - new Date(a.transactionTime));
-  
+
       setVoterDetails(voterList);
     } catch (error) {
       setVoterError(error.message);
@@ -612,11 +581,11 @@ const CandidateModel = ({ visible, onClose, title, candidate, isEditMode, onUpda
   .export-btn {
     background: #028248;
     color: #fff;
-    border: none;
-    padding: 6px 10px;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 14px;
+    border: "none",
+    padding: "6px 10px",
+    borderRadius: "4px",
+    cursor: "pointer",
+    fontSize: "14px",
   }
 
   .export-btn:hover {
