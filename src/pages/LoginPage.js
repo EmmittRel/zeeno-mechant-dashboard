@@ -3,6 +3,7 @@ import { ToastContainer, toast } from 'react-toastify';
 import { FaEye, FaEyeSlash, FaCheckCircle, FaExclamationCircle } from 'react-icons/fa';
 import { Link, useNavigate, Navigate } from 'react-router-dom';
 import { useToken } from '../context/TokenContext';
+import DOMPurify from 'dompurify';
 
 const LoginPage = () => {
   const [formData, setFormData] = useState({
@@ -18,10 +19,15 @@ const LoginPage = () => {
     return <Navigate to="/" replace />;
   }
 
+  const sanitizeInput = (input) => {
+    return DOMPurify.sanitize(input); 
+  };
+
   const handleChange = (e) => {
+    const sanitizedValue = sanitizeInput(e.target.value);
     setFormData({
       ...formData,
-      [e.target.name]: e.target.value,
+      [e.target.name]: sanitizedValue,
     });
   };
 
@@ -94,7 +100,7 @@ const LoginPage = () => {
         sessionStorage.setItem("token", data.access_token);
         sessionStorage.setItem("refresh_token", data.refresh_token);
         sessionStorage.setItem("username", formData.username);
-        updateToken(data.access_token, data.refresh_token);
+        updateToken(data.access_token);
         showSuccessToast("Login successful! Redirecting...");
         setTimeout(() => navigate("/"), 1500);
       } else {

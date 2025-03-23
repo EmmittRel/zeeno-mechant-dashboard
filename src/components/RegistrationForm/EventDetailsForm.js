@@ -209,7 +209,7 @@ const EventDetailsForm = () => {
 
     try {
       // Step 1: Upload the image (if a file is selected)
-      let imageUrl = formData.img; // Use existing image URL if no new file is selected
+      let imageUrl = formData.img; 
       if (selectedFile) {
         imageUrl = await new Promise((resolve, reject) => {
           uploadFile(
@@ -224,7 +224,7 @@ const EventDetailsForm = () => {
             }
           );
         });
-        setFormData((prev) => ({ ...prev, img: imageUrl })); // Update formData with the new image URL
+        setFormData((prev) => ({ ...prev, img: imageUrl })); 
       }
 
       // Step 2: Submit the form data
