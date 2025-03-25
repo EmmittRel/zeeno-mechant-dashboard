@@ -55,19 +55,27 @@ const TableComponent = () => {
           return {};
         }
 
-        const parsedData = apiResponse.response;
+        const response = apiResponse.response;
 
         return {
-          name: parsedData.additionalProp1 || "N/A",
-          email: parsedData.additionalProp3 || "N/A",
-          phone: parsedData.additionalProp5 || "N/A",
-          paymentStatus: parsedData.additionalProp4 ? "Paid" : "Pending",
-          status: parsedData.additionalProp12 || "Pending",
-          imageUrl: parsedData.additionalProp2 || "",
-          age: parsedData.additionalProp6 || "N/A",
-          location: parsedData.additionalProp7 || "N/A",
-          parentName: parsedData.additionalProp9 || "N/A",
-          category: parsedData.additionalProp10 || "N/A",
+          name: response.name || "N/A",
+          email: response.email || "N/A",
+          phone: response.contactNumber || "N/A",
+          paymentStatus: apiResponse.payment ? "Paid" : "Pending",
+          status: "Pending", // Default status since it's not in the response
+          imageUrl: response.image || "",
+          age: response.age || "N/A",
+          location: response.temporaryAddress || response.permanentAddress || "N/A",
+          parentName: response.guardianName || "N/A",
+          category: response.reason || "N/A",
+          dateOfBirth: response.dateOfBirth || "N/A",
+          gender: response.gender || "N/A",
+          weight: response.weight || "N/A",
+          height: response.height || "N/A",
+          optionalNumber: response.optionalNumber || "N/A",
+          source: response.source || "N/A",
+          temporaryAddress: response.temporaryAddress || "N/A",
+          permanentAddress: response.permanentAddress || "N/A"
         };
       } catch (error) {
         console.error("Error parsing response:", error);
@@ -160,7 +168,8 @@ const TableComponent = () => {
     const filtered = data.filter(
       (row) =>
         row.name.toLowerCase().includes(query) ||
-        row.email.toLowerCase().includes(query)
+        row.email.toLowerCase().includes(query) ||
+        row.phone.toLowerCase().includes(query)
     );
 
     setFilteredData(filtered);
@@ -175,8 +184,14 @@ const TableComponent = () => {
         "Phone",
         "Age",
         "Location",
-        "Parent Name",
-        "Category",
+        "Guardian Name",
+        "Reason",
+        "Date of Birth",
+        "Gender",
+        "Weight",
+        "Height",
+        "Optional Number",
+        "Source",
         "Payment Status",
         "Status",
       ],
@@ -188,6 +203,13 @@ const TableComponent = () => {
         row.location,
         row.parentName,
         row.category,
+        row.dateOfBirth,
+        row.gender,
+        row.weight,
+        row.height,
+        row.optionalNumber,
+        row.source,
+        row.paymentStatus,
         row.status,
       ]),
     ]
@@ -228,10 +250,17 @@ const TableComponent = () => {
         <p><strong>Name:</strong> ${row.name}</p>
         <p><strong>Email:</strong> ${row.email}</p>
         <p><strong>Phone:</strong> ${row.phone}</p>
+        <p><strong>Optional Number:</strong> ${row.optionalNumber}</p>
         <p><strong>Age:</strong> ${row.age}</p>
-        <p><strong>Location:</strong> ${row.location}</p>
-        <p><strong>Parent Name:</strong> ${row.parentName}</p>
-        <p><strong>Category:</strong> ${row.category}</p>
+        <p><strong>Date of Birth:</strong> ${row.dateOfBirth}</p>
+        <p><strong>Gender:</strong> ${row.gender}</p>
+        <p><strong>Weight:</strong> ${row.weight}</p>
+        <p><strong>Height:</strong> ${row.height}</p>
+        <p><strong>Temporary Address:</strong> ${row.temporaryAddress}</p>
+        <p><strong>Permanent Address:</strong> ${row.permanentAddress}</p>
+        <p><strong>Guardian Name:</strong> ${row.parentName}</p>
+        <p><strong>Reason:</strong> ${row.category}</p>
+        <p><strong>Source:</strong> ${row.source}</p>
         <p><strong>Payment Status:</strong> ${row.paymentStatus}</p>
         <p><strong>Status:</strong> ${row.status}</p>
         ${row.imageUrl ? `<img src="${row.imageUrl}" alt="${row.name}" style="width: 100px; height: 100px; border-radius: 50%; object-fit: cover; margin-top: 10px;" />` : ""}
@@ -300,7 +329,7 @@ const TableComponent = () => {
           <FaSearch className="search-icon" />
           <input
             type="text"
-            placeholder="Search by name or email"
+            placeholder="Search by name, email or phone"
             value={searchQuery}
             onChange={handleSearchChange}
           />
@@ -355,6 +384,8 @@ const TableComponent = () => {
                   <th>Phone Number</th>
                   <th>Age</th>
                   <th>Location</th>
+                  <th>Guardian Name</th>
+                  <th>Reason</th>
                   <th>Status</th>
                   <th>Action</th>
                 </tr>
@@ -395,6 +426,8 @@ const TableComponent = () => {
                     <td>{row.phone}</td>
                     <td>{row.age}</td>
                     <td>{row.location}</td>
+                    <td>{row.parentName}</td>
+                    <td>{row.category}</td>
                     <td
                       className={
                         row.status === "Approved"

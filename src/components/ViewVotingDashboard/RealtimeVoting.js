@@ -10,30 +10,31 @@ const RealtimeVoting = ({ id: event_id }) => {
   const [eventData, setEventData] = useState(null);
   const [contestants, setContestants] = useState([]);
   const [currentPage, setCurrentPage] = useState(1);
+  const [loading, setLoading] = useState(false);
   const rowsPerPage = 10;
 
   // Currency to country code mapping
   const currencyToCountry = {
-    USD: 'US', // United States Dollar
-    AUD: 'AU', // Australian Dollar
-    GBP: 'GB', // British Pound
-    CAD: 'CA', // Canadian Dollar
-    EUR: 'EU', // Euro (European Union)
-    AED: 'AE', // UAE Dirham
-    QAR: 'QA', // Qatari Riyal
-    MYR: 'MY', // Malaysian Ringgit
-    KWD: 'KW', // Kuwaiti Dinar
-    HKD: 'HK', // Hong Kong Dollar
-    CNY: 'CN', // Chinese Yuan
-    SAR: 'SA', // Saudi Riyal
-    OMR: 'OM', // Omani Rial
-    SGD: 'SG', // Singapore Dollar
-    NOK: 'NO', // Norwegian Krone
-    KRW: 'KR', // South Korean Won
-    JPY: 'JP', // Japanese Yen
-    THB: 'TH', // Thai Baht
-    INR: 'IN', // Indian Rupee
-    NPR: 'NP', // Nepalese Rupee
+    USD: 'US',
+    AUD: 'AU',
+    GBP: 'GB',
+    CAD: 'CA',
+    EUR: 'EU',
+    AED: 'AE',
+    QAR: 'QA',
+    MYR: 'MY',
+    KWD: 'KW',
+    HKD: 'HK',
+    CNY: 'CN',
+    SAR: 'SA',
+    OMR: 'OM',
+    SGD: 'SG',
+    NOK: 'NO',
+    KRW: 'KR',
+    JPY: 'JP',
+    THB: 'TH',
+    INR: 'IN',
+    NPR: 'NP',
   };
 
   // Function to format date
@@ -50,14 +51,10 @@ const RealtimeVoting = ({ id: event_id }) => {
     const ordinalSuffix = (d) => {
       if (d > 3 && d < 21) return 'th';
       switch (d % 10) {
-        case 1:
-          return 'st';
-        case 2:
-          return 'nd';
-        case 3:
-          return 'rd';
-        default:
-          return 'th';
+        case 1: return 'st';
+        case 2: return 'nd';
+        case 3: return 'rd';
+        default: return 'th';
       }
     };
 
@@ -72,7 +69,52 @@ const RealtimeVoting = ({ id: event_id }) => {
     C: { label: 'Cancelled', color: '#6C757D' },
   };
 
-  // Fetch event data to get payment_info
+  // Function to extract intent_id from NQR transaction
+  const getIntentIdFromNQR = (addenda1, addenda2) => {
+    try {
+      const combined = `${addenda1}-${addenda2}`;
+      const hexMatch = combined.match(/vnpr-([a-f0-9]+)/i);
+      if (hexMatch && hexMatch[1]) {
+        return parseInt(hexMatch[1], 16);
+      }
+      return null;
+    } catch (error) {
+      console.error('Error extracting intent_id from NQR:', error);
+      return null;
+    }
+  };
+
+  // Fetch NQR transactions
+  const fetchNQRTransactions = async () => {
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      
+      const response = await fetch('https://auth.zeenopay.com/payments/qr/transactions/static', {
+        method: 'POST',
+        headers: {
+          'accept': 'application/json',
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          'start_date': "2025-03-21",
+          'end_date': today
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch NQR data');
+      }
+
+      const result = await response.json();
+      return result.transactions?.responseBody || [];
+    } catch (error) {
+      console.error('Error fetching NQR transactions:', error);
+      return [];
+    }
+  };
+
+  // Fetch event data
   useEffect(() => {
     const fetchEventData = async () => {
       try {
@@ -120,26 +162,26 @@ const RealtimeVoting = ({ id: event_id }) => {
     fetchContestants();
   }, [token, event_id]);
 
-  // Fetch payment intents data
+  // Fetch all payment data
   useEffect(() => {
-    const fetchData = async () => {
-      if (!eventData) return;
-
+    const fetchAllData = async () => {
+      if (!eventData || !contestants.length) return;
+      
+      setLoading(true);
       try {
-        // Fetch data for non-QR/NQR processors
-        const response = await fetch(`https://auth.zeenopay.com/payments/intents/?event_id=${event_id}`, {
+        // 1. Fetch regular payment intents (non-QR)
+        const regularResponse = await fetch(`https://auth.zeenopay.com/payments/intents/?event_id=${event_id}`, {
           headers: {
             Authorization: `Bearer ${token}`,
           },
         });
 
-        if (!response.ok) {
-          throw new Error('Failed to fetch data');
+        if (!regularResponse.ok) {
+          throw new Error('Failed to fetch regular payment data');
         }
+        const regularPayments = await regularResponse.json();
 
-        const result = await response.json();
-
-        // Fetch data for QR/NQR processors
+        // 2. Fetch QR payments (only processor = 'QR')
         const qrResponse = await fetch(`https://auth.zeenopay.com/payments/qr/intents?event_id=${event_id}`, {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -147,22 +189,21 @@ const RealtimeVoting = ({ id: event_id }) => {
         });
 
         if (!qrResponse.ok) {
-          throw new Error('Failed to fetch QR/NQR data');
+          throw new Error('Failed to fetch QR data');
         }
+        const qrPayments = await qrResponse.json();
 
-        const qrResult = await qrResponse.json();
+        // 3. Fetch NQR payments (NepalPay QR)
+        const nqrTransactions = await fetchNQRTransactions();
 
-        // Combine both results
-        const combinedData = [...result, ...qrResult];
-
-        // Filter and map the data
-        const filteredData = combinedData
+        // Process regular payments (non-QR)
+        const processedRegularData = regularPayments
           .filter((item) => item.event_id == event_id && item.status === 'S')
           .map((item) => {
             let currency = 'USD';
             const processor = item.processor?.toUpperCase();
 
-            if (['ESEWA', 'KHALTI', 'FONEPAY', 'PRABHUPAY', 'NQR', 'QR'].includes(processor)) {
+            if (['ESEWA', 'KHALTI', 'FONEPAY', 'PRABHUPAY'].includes(processor)) {
               currency = 'NPR';
             } else if (['PHONEPE', 'PAYU'].includes(processor)) {
               currency = 'INR';
@@ -170,16 +211,10 @@ const RealtimeVoting = ({ id: event_id }) => {
               currency = item.currency?.toUpperCase() || 'USD';
             }
 
-            // Use the imported utility function to calculate votes
             const votes = calculateVotes(item.amount, currency);
 
-            // Determine payment type display value
             let paymentType;
-            if (processor === 'NQR') {
-              paymentType = 'NepalPayQR';
-            } else if (processor === 'QR') {
-              paymentType = 'FonePayQR';
-            } else if (processor === 'FONEPAY') {
+            if (processor === 'FONEPAY') {
               paymentType = 'iMobile Banking';
             } else if (processor === 'PHONEPE') {
               paymentType = 'India';
@@ -191,8 +226,7 @@ const RealtimeVoting = ({ id: event_id }) => {
                 : '';
             }
 
-            // Find the contestant name
-            const contestant = contestants.find((contestant) => contestant.id === item.intent_id);
+            const contestant = contestants.find((c) => c.id === item.intent_id);
             const contestantName = contestant ? contestant.name : 'Unknown';
 
             return {
@@ -210,21 +244,76 @@ const RealtimeVoting = ({ id: event_id }) => {
             };
           });
 
-        const sortedData = filteredData.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        // Process QR payments (only processor = 'QR')
+        const processedQRData = qrPayments
+          .filter((item) => 
+            item.event_id == event_id && 
+            item.status === 'S' && 
+            item.processor?.toUpperCase() === 'QR'
+          )
+          .map((item) => {
+            const currency = 'NPR';
+            const votes = calculateVotes(item.amount, currency);
+            
+            const contestant = contestants.find((c) => c.id === item.intent_id);
+            const contestantName = contestant ? contestant.name : 'Unknown';
 
-        setData(sortedData);
+            return {
+              name: item.name,
+              email: item.email || 'N/A',
+              phone: item.phone_no || 'N/A',
+              createdAt: item.created_at,
+              formattedCreatedAt: formatDate(item.created_at),
+              amount: item.amount,
+              status: statusLabel[item.status] || { label: item.status, color: '#6C757D' },
+              paymentType: 'FonePayQR',
+              votes: votes,
+              currency: currency,
+              contestantName: contestantName,
+            };
+          });
+
+        // Process NQR payments (NepalPay QR)
+        const processedNQRData = nqrTransactions
+          .filter(txn => txn.debitStatus === '000') 
+          .map(txn => {
+            const intentId = getIntentIdFromNQR(txn.addenda1, txn.addenda2);
+            const contestant = contestants.find(c => c.id === intentId);
+            const contestantName = contestant ? contestant.name : 'Unknown';
+            
+            return {
+              name: txn.payerName,
+              email: 'N/A',
+              phone: txn.payerMobileNumber,
+              createdAt: txn.localTransactionDateTime,
+              formattedCreatedAt: formatDate(txn.localTransactionDateTime),
+              amount: txn.amount,
+              status: { label: 'Success', color: '#28A745' },
+              paymentType: 'NepalPayQR',
+              votes: calculateVotes(txn.amount, 'NPR'),
+              currency: 'NPR',
+              contestantName: contestantName,
+            };
+          });
+
+        // Combine all data and sort by date
+        const combinedData = [...processedRegularData, ...processedQRData, ...processedNQRData]
+          .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+        setData(combinedData);
       } catch (error) {
         console.error('Error fetching data:', error);
+      } finally {
+        setLoading(false);
       }
     };
 
-    fetchData();
+    fetchAllData();
   }, [token, event_id, eventData, contestants]);
 
-  // Handle CSV export (Frontend-only)
+  // Handle CSV export
   const handleExport = () => {
     try {
-      // Prepare the CSV headers
       const headers = [
         'Vote By',
         'Vote To',
@@ -236,7 +325,6 @@ const RealtimeVoting = ({ id: event_id }) => {
         'Transaction Time',
       ];
 
-      // Prepare the CSV rows
       const rows = data.map((row) => [
         row.name,
         row.contestantName,
@@ -248,11 +336,9 @@ const RealtimeVoting = ({ id: event_id }) => {
         row.formattedCreatedAt,
       ]);
 
-      // Combine headers and rows into a CSV string
       const csvContent =
         headers.join(',') + '\n' + rows.map((row) => row.join(',')).join('\n');
 
-      // Create a Blob and download the CSV file
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
@@ -280,11 +366,17 @@ const RealtimeVoting = ({ id: event_id }) => {
           <h3>Realtime Voting Data</h3>
         </div>
         <div className="actions">
-          <button className="export-btn" onClick={handleExport}>
+          <button className="export-btn" onClick={handleExport} disabled={loading}>
             <FaDownload className="export-icon" /> Export
           </button>
         </div>
       </div>
+
+      {loading && (
+        <div className="loading-indicator">
+          Loading data...
+        </div>
+      )}
 
       <div className="table-wrapper">
         <table>
@@ -333,7 +425,7 @@ const RealtimeVoting = ({ id: event_id }) => {
             ) : (
               <tr>
                 <td colSpan="8" style={{ textAlign: 'center' }}>
-                  No data available for this event.
+                  {loading ? 'Loading data...' : 'No data available for this event.'}
                 </td>
               </tr>
             )}
@@ -342,27 +434,29 @@ const RealtimeVoting = ({ id: event_id }) => {
       </div>
 
       {/* Pagination */}
-      <div className="pagination">
-        <button
-          onClick={() => handlePageChange(currentPage - 1)}
-          disabled={currentPage === 1}
-          className="pagination-btn"
-        >
-          Prev
-        </button>
+      {data.length > 0 && (
+        <div className="pagination">
+          <button
+            onClick={() => handlePageChange(currentPage - 1)}
+            disabled={currentPage === 1 || loading}
+            className="pagination-btn"
+          >
+            Prev
+          </button>
 
-        <span className="page-info">
-          Page {currentPage} of {totalPages}
-        </span>
+          <span className="page-info">
+            Page {currentPage} of {totalPages}
+          </span>
 
-        <button
-          onClick={() => handlePageChange(currentPage + 1)}
-          disabled={currentPage === totalPages}
-          className="pagination-btn"
-        >
-          Next
-        </button>
-      </div>
+          <button
+            onClick={() => handlePageChange(currentPage + 1)}
+            disabled={currentPage === totalPages || loading}
+            className="pagination-btn"
+          >
+            Next
+          </button>
+        </div>
+      )}
 
       <style>{
         `@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
@@ -397,6 +491,11 @@ const RealtimeVoting = ({ id: event_id }) => {
           align-items: center;
           gap: 8px;
           font-family: 'Poppins', sans-serif;
+        }
+
+        .export-btn:disabled {
+          background-color: #cccccc;
+          cursor: not-allowed;
         }
 
         .export-icon {
@@ -463,6 +562,13 @@ const RealtimeVoting = ({ id: event_id }) => {
           border-radius: 5px;
           font-weight: bold;
           font-size: 12px;
+        }
+
+        .loading-indicator {
+          padding: 10px;
+          text-align: center;
+          font-style: italic;
+          color: #666;
         }
 
         @media screen and (max-width: 768px) {

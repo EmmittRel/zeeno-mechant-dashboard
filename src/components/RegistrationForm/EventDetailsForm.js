@@ -3,7 +3,7 @@ import { DndProvider, useDrag, useDrop } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import { FaArrowUp, FaArrowDown, FaEye, FaEyeSlash } from 'react-icons/fa';
 import { useToken } from '../../context/TokenContext';
-import useS3Upload from '../../hooks/useS3Upload'; // Adjust the path as needed
+import useS3Upload from '../../hooks/useS3Upload'; 
 
 const API_URL = 'https://auth.zeenopay.com/events/forms/';
 
@@ -27,6 +27,12 @@ const initialFormState = {
     },
     {
       title: 'What is your name?',
+      type: 'text',
+      isRequired: true,
+      isVisible: true,
+    },
+    {
+      title: 'What is your age?',
       type: 'text',
       isRequired: true,
       isVisible: true,

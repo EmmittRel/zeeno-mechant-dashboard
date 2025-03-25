@@ -1,10 +1,25 @@
-import React from "react";
+import React, { useRef, useEffect } from "react";
 import html2pdf from "html2pdf.js";
+import { FaTimes, FaDownload, FaPrint } from "react-icons/fa";
 
 const PopupModal = ({ data, onClose }) => {
+  const modalRef = useRef();
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (modalRef.current && !modalRef.current.contains(event.target)) {
+        onClose();
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [onClose]);
+
   if (!data) return null;
 
-  // Function to handle downloading the modal content as a PDF
   const handleDownloadPDF = () => {
     const element = document.getElementById("modal-content");
     const opt = {
@@ -15,7 +30,6 @@ const PopupModal = ({ data, onClose }) => {
       jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
     };
 
-    // Hide buttons and close icon before generating the PDF
     const buttons = document.querySelector(".modal-actions");
     const closeIcon = document.querySelector(".modal-close-btn");
     if (buttons) buttons.style.display = "none";
@@ -26,102 +40,113 @@ const PopupModal = ({ data, onClose }) => {
       .set(opt)
       .save()
       .then(() => {
-        // Restore buttons and close icon after PDF generation
         if (buttons) buttons.style.display = "flex";
         if (closeIcon) closeIcon.style.display = "block";
       });
   };
 
-  // Function to handle printing the modal content directly
-  const handlePrintPDF = () => {
-    const printContents = document.getElementById("modal-content").innerHTML;
-    const originalContents = document.body.innerHTML;
-
-    // Hide buttons and close icon before printing
-    const buttons = document.querySelector(".modal-actions");
-    const closeIcon = document.querySelector(".modal-close-btn");
-    if (buttons) buttons.style.display = "none";
-    if (closeIcon) closeIcon.style.display = "none";
-
-    // Replace the body content with the modal content
-    document.body.innerHTML = printContents;
-
-    // Trigger the print dialog
-    window.print();
-
-    // Restore the original body content
-    document.body.innerHTML = originalContents;
-
-    // Restore buttons and close icon after printing
-    if (buttons) buttons.style.display = "flex";
-    if (closeIcon) closeIcon.style.display = "block";
-
-    // Re-attach event listeners (if any)
-    window.location.reload(); // Reload the page to restore functionality
+  const handlePrint = () => {
+    const printWindow = window.open("", "_blank");
+    const printContent = document.getElementById("modal-content").innerHTML;
+    
+    printWindow.document.open();
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>${data.name} Details</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 20px; }
+            h2 { color: #333; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+            .detail-section { margin-bottom: 15px; }
+            .detail-section h3 { margin-bottom: 5px; color: #444; }
+            .detail-item { margin-bottom: 8px; }
+            .detail-item strong { display: inline-block; width: 160px; }
+            .profile-image { 
+              width: 100px; 
+              height: 100px; 
+              border-radius: 50%; 
+              object-fit: cover; 
+              float: right;
+              margin: 10px;
+              border: 1px solid #ddd;
+            }
+          </style>
+        </head>
+        <body>
+          ${printContent
+            .replace(/<div class="modal-actions">.*?<\/div>/, "")
+            .replace(/<button class="modal-close-btn">.*?<\/button>/, "")}
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.print();
   };
 
   return (
     <div className="modal-overlay">
-      <div className="modal-content" id="modal-content">
-        {/* Close button */}
+      <div className="modal-content" id="modal-content" ref={modalRef}>
         <button className="modal-close-btn" onClick={onClose}>
-          &times;
+          <FaTimes />
         </button>
 
-        {/* Profile picture at the top-right */}
         {data.imageUrl && (
           <div className="profile-image-container">
-            <img
-              src={data.imageUrl}
-              alt={data.name}
-              className="profile-image"
-            />
+            <img src={data.imageUrl} alt={data.name} className="profile-image" />
           </div>
         )}
 
-        {/* Modal header */}
-        <h2>Detailed Information</h2>
+        <h2>Registration Details</h2>
 
-        {/* Modal details */}
-        <div className="modal-details">
-          <p>
-            <strong>Name:</strong> {data.name}
-          </p>
-          <p>
-            <strong>Email:</strong> {data.email}
-          </p>
-          <p>
-            <strong>Phone:</strong> {data.phone}
-          </p>
-          <p>
-            <strong>Age:</strong> {data.age}
-          </p>
-          <p>
-            <strong>Location:</strong> {data.location}
-          </p>
-          <p>
-            <strong>Parent Name:</strong> {data.parentName}
-          </p>
-          <p>
-            <strong>Category:</strong> {data.category}
-          </p>
-          <p>
-            <strong>Payment Status:</strong> {data.paymentStatus}
-          </p>
-          <p>
-            <strong>Status:</strong> {data.status}
-          </p>
+        <div className="detail-sections">
+          <div className="detail-section">
+            <h3>Personal Information</h3>
+            <DetailItem label="Full Name" value={data.name} />
+            <DetailItem label="Date of Birth" value={data.dateOfBirth} />
+            <DetailItem label="Age" value={data.age} />
+            <DetailItem label="Gender" value={data.gender || "Not specified"} />
+            <DetailItem label="Height" value={data.height ? `${data.height} cm` : "Not specified"} />
+            <DetailItem label="Weight" value={data.weight ? `${data.weight} kg` : "Not specified"} />
+          </div>
+
+          <div className="detail-section">
+            <h3>Contact Information</h3>
+            <DetailItem label="Email" value={data.email} />
+            <DetailItem label="Phone Number" value={data.phone} />
+            <DetailItem label="Alternate Number" value={data.optionalNumber || "Not provided"} />
+          </div>
+
+          <div className="detail-section">
+            <h3>Address Information</h3>
+            <DetailItem label="Temporary Address" value={data.temporaryAddress} />
+            <DetailItem label="Permanent Address" value={data.permanentAddress} />
+          </div>
+
+          <div className="detail-section">
+            <h3>Guardian Information</h3>
+            <DetailItem label="Guardian Name" value={data.parentName} />
+          </div>
+
+          <div className="detail-section">
+            <h3>Additional Information</h3>
+            <DetailItem label="Reason" value={data.category} />
+            <DetailItem label="Source" value={data.source} />
+            <DetailItem label="Registration Status" value={data.status} />
+            <DetailItem label="Payment Status" value={data.paymentStatus} />
+          </div>
         </div>
 
-        {/* Buttons for downloading and printing PDF */}
         <div className="modal-actions">
-          <button onClick={handleDownloadPDF}>Download PDF</button>
-          <button onClick={handlePrintPDF}>Print PDF</button>
+          <button onClick={handleDownloadPDF}>
+            <FaDownload /> Download PDF
+          </button>
+          <button onClick={handlePrint}>
+            <FaPrint /> Print
+          </button>
         </div>
       </div>
 
-      {/* Styles */}
-      <style>{`
+      <style jsx>{`
         .modal-overlay {
           position: fixed;
           top: 0;
@@ -133,15 +158,19 @@ const PopupModal = ({ data, onClose }) => {
           justify-content: center;
           align-items: center;
           z-index: 1000;
+          padding: 15px;
+          box-sizing: border-box;
         }
 
         .modal-content {
           background-color: #fff;
           padding: 20px;
-          border-radius: 8px;
-          width: 400px;
-          max-width: 90%;
-          box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+          border-radius: 12px;
+          width: 100%;
+          max-width: 700px;
+          max-height: 90vh;
+          overflow-y: auto;
+          box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
           position: relative;
         }
 
@@ -153,68 +182,205 @@ const PopupModal = ({ data, onClose }) => {
           border: none;
           font-size: 20px;
           cursor: pointer;
-          color: #333;
+          color: #666;
+          z-index: 2;
+          width: 30px;
+          height: 30px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
         }
 
         .profile-image-container {
           position: absolute;
-          top: 10px;
-          right: 10px;
-          margin-top: 30px; 
+          top: 50px;
+          right: 15px;
+          z-index: 1;
         }
 
         .profile-image {
-          width: 80px;
-          height: 80px;
-          border-radius: 50%;
+          width: 70px;
+          height: 70px;
+          border-radius: 20%;
           object-fit: cover;
-          border: 2px solid #ddd;
+          border: 2px solid #f0f0f0;
         }
 
-        .modal-details {
-          margin-top: 20px;
-        }
-
-        .modal-details p {
-          margin: 10px 0;
-          font-size: 14px;
-          color: #555;
-        }
-
-        .modal-details strong {
+        h2 {
+          margin-top: 0;
           color: #333;
+          border-bottom: 1px solid #eee;
+          padding-bottom: 10px;
+          margin-bottom: 15px;
+          padding-right: 80px;
+          font-size: 1.3rem;
+        }
+
+        .detail-sections {
+          display: grid;
+          grid-template-columns: 1fr;
+          gap: 15px;
+        }
+
+        .detail-section {
+          background: rgb(243, 243, 243);
+          padding: 12px;
+          border-radius: 8px;
+        }
+
+        .detail-section h3 {
+          margin-top: 0;
+          margin-bottom: 12px;
+          color: #444;
+          font-size: 1rem;
+          border-bottom: 1px solid #ddd;
+          padding-bottom: 5px;
         }
 
         .modal-actions {
           display: flex;
-          justify-content: flex-start;
+          justify-content: flex-end;
           gap: 10px;
           margin-top: 20px;
+          flex-wrap: wrap;
         }
 
         .modal-actions button {
-          padding: 10px 20px;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 10px 15px;
           background-color: #0062FF;
           color: white;
           border: none;
-          border-radius: 5px;
+          border-radius: 6px;
           cursor: pointer;
           font-size: 14px;
+          transition: background-color 0.2s;
+          flex: 1;
+          min-width: 120px;
+          justify-content: center;
         }
 
         .modal-actions button:hover {
           background-color: #0044CC;
         }
 
-        @media print {
-          .modal-actions,
-          .modal-close-btn {
-            display: none; 
+        /* Mobile-specific styles */
+        @media (max-width: 480px) {
+          .modal-overlay {
+            padding: 10px;
+          }
+
+          .modal-content {
+            padding: 15px;
+          }
+
+          .profile-image-container {
+            top: 45px;
+            right: 10px;
+          }
+
+          .profile-image {
+            width: 50px;
+            height: 50px;
+          }
+
+          h2 {
+            font-size: 1.2rem;
+            padding-right: 60px;
+            margin-bottom: 10px;
+          }
+
+          .detail-sections {
+            gap: 10px;
+          }
+
+          .detail-section {
+            padding: 10px;
+          }
+
+          .detail-section h3 {
+            font-size: 0.9rem;
+            margin-bottom: 8px;
+          }
+
+          .modal-actions {
+            flex-direction: column;
+            gap: 8px;
+            margin-top: 15px;
+          }
+
+          .modal-actions button {
+            width: 100%;
+            padding: 8px 12px;
+          }
+        }
+
+        /* Small mobile devices */
+        @media (max-width: 360px) {
+          .modal-content {
+            padding: 12px;
+          }
+
+          h2 {
+            font-size: 1.1rem;
+          }
+
+          .profile-image {
+            width: 40px;
+            height: 40px;
+          }
+
+          .detail-item {
+            font-size: 13px;
           }
         }
       `}</style>
     </div>
   );
 };
+
+const DetailItem = ({ label, value }) => (
+  <div className="detail-item">
+    <strong>{label}:</strong> <span>{value}</span>
+    <style jsx>{`
+      .detail-item {
+        margin-bottom: 8px;
+        font-size: 14px;
+        line-height: 1.4;
+        display: flex;
+        flex-wrap: wrap;
+      }
+      .detail-item strong {
+        color: #555;
+        min-width: 120px;
+      }
+      .detail-item span {
+        flex: 1;
+        word-break: break-word;
+      }
+
+      @media (max-width: 480px) {
+        .detail-item {
+          font-size: 13px;
+          margin-bottom: 6px;
+        }
+        .detail-item strong {
+          min-width: 100px;
+        }
+      }
+
+      @media (max-width: 360px) {
+        .detail-item {
+          font-size: 12px;
+        }
+        .detail-item strong {
+          min-width: 90px;
+        }
+      }
+    `}</style>
+  </div>
+);
 
 export default PopupModal;

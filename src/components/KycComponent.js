@@ -1,49 +1,52 @@
 import React, { useState } from "react";
+import useS3Upload from "../hooks/useS3Upload";
 import { useToken } from "../context/TokenContext";
-import ImageUploader from "./ImageUploader";
+import styled from "styled-components";
 
 const KycComponent = () => {
   const { token } = useToken();
-  const [companyName, setCompanyName] = useState("");
-  const [representativeName, setRepresentativeName] = useState("");
-  const [email, setEmail] = useState("");
-  const [phoneNumber, setPhoneNumber] = useState("");
-  const [optionalPhoneNumber, setOptionalPhoneNumber] = useState("");
-  const [companyAddress, setCompanyAddress] = useState("");
-  const [registrationNumber, setRegistrationNumber] = useState("");
-  const [panVatCertificateNumber, setPanVatCertificateNumber] = useState("");
-  const [
-    authorizedPersonCitizenshipNumber,
-    setAuthorizedPersonCitizenshipNumber,
-  ] = useState("");
-  const [registrationCertificateUrl, setRegistrationCertificateUrl] =
-    useState("");
-  const [panVatCertificateUrl, setPanVatCertificateUrl] = useState("");
-  const [authorizedPersonCitizenshipUrl, setAuthorizedPersonCitizenshipUrl] =
-    useState("");
-  const [taxClearanceUrl, setTaxClearanceUrl] = useState("");
+  const { uploadToS3 } = useS3Upload();
+
+  const [formData, setFormData] = useState({
+    company_name: "",
+    representative_name: "",
+    email: "",
+    phone_number: "",
+    optional_phone_number: "",
+    company_address: "",
+    registration_number: "",
+    pan_vat_certificate_number: "",
+    authorized_person_citizenship_number: "",
+    authorized_person_citizenship_url: "",
+    registration_certificate_url: "",
+    pan_vat_certificate_url: "",
+    status: "N",
+  });
+
+  const [uploadProgress, setUploadProgress] = useState({ regCert: 0, panCert: 0 });
+
+  const handleChange = (e) => {
+    setFormData({ ...formData, [e.target.name]: e.target.value });
+  };
+
+  const handleFileUpload = async (e, type) => {
+    const file = e.target.files[0];
+    if (file) {
+      try {
+        const url = await uploadToS3(file, (progress) =>
+          setUploadProgress((prev) => ({ ...prev, [type]: progress }))
+        );
+        setFormData((prev) => ({ ...prev, [type]: url }));
+      } catch (error) {
+        alert(`Error uploading ${type}: ${error.message}`);
+      }
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-
-    const formData = {
-      companyName,
-      representativeName,
-      email,
-      phoneNumber,
-      optionalPhoneNumber,
-      companyAddress,
-      registrationNumber,
-      panVatCertificateNumber,
-      authorizedPersonCitizenshipNumber,
-      registrationCertificateUrl,
-      panVatCertificateUrl,
-      authorizedPersonCitizenshipUrl,
-      taxClearanceUrl,
-    };
-
     try {
-      const response = await fetch("https://api.zeenopay.com/users/me/kyc", {
+      const response = await fetch("https://auth.zeenopay.com/users/kyc/", {
         method: "POST",
         body: JSON.stringify(formData),
         headers: {
@@ -60,232 +63,115 @@ const KycComponent = () => {
       }
     } catch (error) {
       console.error("Error submitting KYC form:", error);
-      alert(
-        "An error occurred while submitting the KYC form. Please try again."
-      );
+      alert("An error occurred while submitting the KYC form. Please try again.");
     }
   };
 
   return (
-    <form onSubmit={handleSubmit}>
-      <h2 className="section-title">KYC Verification Form</h2>
-      <p style={{ color: "#555" }}>
-        Verify your KYC to unlock full access to the dashboard, create various
-        items, and perform detailed metrics.
-      </p>
-      <div className="kyc-setup">
-        <div className="kyc-form-grid">
-          <div className="kyc-form-field">
-            <label>Company Name</label>
-            <input
-              className="kyc-input"
-              type="text"
-              placeholder="Enter Company Name"
-              value={companyName}
-              onChange={(e) => setCompanyName(e.target.value)}
-            />
-          </div>
+    <FormContainer onSubmit={handleSubmit}>
+      <h2>KYC Verification Form</h2>
+      <p>Verify your KYC to unlock full access to the dashboard.</p>
 
-          <div className="kyc-form-field">
-            <label>Representative Name</label>
-            <input
-              className="kyc-input"
-              type="text"
-              placeholder="Enter Representative Name"
-              value={representativeName}
-              onChange={(e) => setRepresentativeName(e.target.value)}
-            />
-          </div>
+      <FormGrid>
+        {[  
+          ["company_name", "Company Name", "representative_name", "Representative Name"],
+          ["email", "Email", "phone_number", "Phone Number"],
+          ["optional_phone_number", "Optional Phone Number", "company_address", "Company Address"],
+          ["registration_number", "Company Registration Number", "pan_vat_certificate_number", "PAN/VAT Certificate Number"],
+          ["authorized_person_citizenship_number", "Authorized Person Citizenship Number"]
+        ].map(([name1, label1, name2, label2], index) => (
+          <FormRowContainer key={index}>
+            <FormRow>
+              <label>{label1}</label>
+              <input type="text" name={name1} placeholder={`Enter ${label1}`} value={formData[name1]} onChange={handleChange} />
+            </FormRow>
+            {name2 && (
+              <FormRow>
+                <label>{label2}</label>
+                <input type="text" name={name2} placeholder={`Enter ${label2}`} value={formData[name2]} onChange={handleChange} />
+              </FormRow>
+            )}
+          </FormRowContainer>
+        ))}
 
-          <div className="kyc-form-field">
-            <label>Email</label>
-            <input
-              className="kyc-input"
-              type="email"
-              placeholder="Enter Email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-          </div>
+        {/* File Upload Fields */}
+        <FormRow>
+          <label>Authorized Person Citizenship</label>
+          <input type="file" accept="image/*" onChange={(e) => handleFileUpload(e, "authorized_person_citizenship_url")} />
+        </FormRow>
+        <FormRow>
+          <label>Registration Certificate</label>
+          <input type="file" accept="image/*" onChange={(e) => handleFileUpload(e, "registration_certificate_url")} />
+        </FormRow>
+        <FormRow>
+          <label>PAN/VAT Certificate</label>
+          <input type="file" accept="image/*" onChange={(e) => handleFileUpload(e, "pan_vat_certificate_url")} />
+        </FormRow>
+      </FormGrid>
 
-          <div className="kyc-form-field">
-            <label>Phone Number</label>
-            <input
-              className="kyc-input"
-              type="tel"
-              placeholder="Enter Phone Number"
-              value={phoneNumber}
-              onChange={(e) => setPhoneNumber(e.target.value)}
-            />
-          </div>
-
-          <div className="kyc-form-field">
-            <label>Optional Phone Number</label>
-            <input
-              className="kyc-input"
-              type="tel"
-              placeholder="Enter Optional Phone Number"
-              value={optionalPhoneNumber}
-              onChange={(e) => setOptionalPhoneNumber(e.target.value)}
-            />
-          </div>
-
-          <div className="kyc-form-field">
-            <label>Company Address</label>
-            <input
-              className="kyc-input"
-              type="text"
-              placeholder="Enter Company Address"
-              value={companyAddress}
-              onChange={(e) => setCompanyAddress(e.target.value)}
-            />
-          </div>
-
-          <div className="kyc-form-field">
-            <label>Company Registration Number</label>
-            <input
-              className="kyc-input"
-              type="text"
-              placeholder="Enter Company Registration Number"
-              value={registrationNumber}
-              onChange={(e) => setRegistrationNumber(e.target.value)}
-            />
-          </div>
-
-          <div className="kyc-form-field">
-            <label>Registration Certificate URL</label>
-            <input
-              className="kyc-input"
-              type="text"
-              placeholder="Enter Registration Certificate URL"
-              value={registrationCertificateUrl}
-              onChange={(e) => setRegistrationCertificateUrl(e.target.value)}
-            />
-          </div>
-
-          <div className="kyc-form-field">
-            <label>PAN/VAT Certificate Number</label>
-            <input
-              className="kyc-input"
-              type="text"
-              placeholder="Enter PAN/VAT Certificate Number"
-              value={panVatCertificateNumber}
-              onChange={(e) => setPanVatCertificateNumber(e.target.value)}
-            />
-          </div>
-
-          <div className="kyc-form-field">
-            <label>PAN/VAT Certificate URL</label>
-            <input
-              className="kyc-input"
-              type="text"
-              placeholder="Enter PAN/VAT Certificate URL"
-              value={panVatCertificateUrl}
-              onChange={(e) => setPanVatCertificateUrl(e.target.value)}
-            />
-          </div>
-
-          <div className="kyc-form-field">
-            <label>Authorized Person Citizenship Number</label>
-            <input
-              className="kyc-input"
-              type="text"
-              placeholder="Enter Citizenship Number"
-              value={authorizedPersonCitizenshipNumber}
-              onChange={(e) =>
-                setAuthorizedPersonCitizenshipNumber(e.target.value)
-              }
-            />
-          </div>
-
-          <div className="kyc-form-field">
-            <label>Authorized Person Citizenship URL</label>
-            <input
-              className="kyc-input"
-              type="text"
-              placeholder="Enter Citizenship URL"
-              value={authorizedPersonCitizenshipUrl}
-              onChange={(e) =>
-                setAuthorizedPersonCitizenshipUrl(e.target.value)
-              }
-            />
-          </div>
-
-          <div className="kyc-form-field">
-            <label>Tax Clearance URL (If any)</label>
-            <input
-              className="kyc-input"
-              type="text"
-              placeholder="Enter Tax Clearance URL"
-              value={taxClearanceUrl}
-              onChange={(e) => setTaxClearanceUrl(e.target.value)}
-            />
-          </div>
-        </div>
-      </div>
-
-      <button type="submit" className="kyc-submit-button">
-        Submit
-      </button>
-
-      <ImageUploader/>
-
-      <style>{`
-        .section-title {
-          margin-bottom: 15px;
-          font-size: 16px;
-          font-weight: bold;
-          text-align: left;
-          font-family: 'Poppins', sans-serif;
-        }
-        .kyc-setup {
-          padding: 20px;
-          background-color: #fff;
-          border-radius: 8px;
-          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-          margin-bottom: 25px;
-          font-family: 'Poppins', sans-serif;
-        }
-        .kyc-form-grid {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 15px;
-          font-family: 'Poppins', sans-serif;
-        }
-        .kyc-form-field {
-          margin-bottom: 10px;
-          font-family: 'Poppins', sans-serif;
-        }
-        .kyc-input {
-          width: 100%;
-          padding: 10px;
-          border: 1px solid #ddd;
-          border-radius: 5px;
-          font-size: 14px;
-          font-family: 'Poppins', sans-serif;
-        }
-        .kyc-submit-button {
-          background-color: #028248;
-          color: white;
-          padding: 10px 25px;
-          border: none;
-          border-radius: 5px;
-          font-size: 14px;
-          cursor: pointer;
-          font-family: 'Poppins', sans-serif;
-          font-weight: 600;
-        }
-        .kyc-submit-button:hover {
-          background-color:rgb(46, 153, 105);
-        }
-        @media (max-width: 768px) {
-          .kyc-form-grid {
-            grid-template-columns: 1fr;
-          }
-        }
-      `}</style>
-    </form>
+      <SubmitButton type="submit">Submit</SubmitButton>
+    </FormContainer>
   );
 };
 
 export default KycComponent;
+
+// Styled Components
+const FormContainer = styled.form`
+  max-width: 700px;
+  margin: auto;
+  padding: 20px;
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.1);
+`;
+
+const FormGrid = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+`;
+
+const FormRowContainer = styled.div`
+  display: flex;
+  gap: 15px;
+  width: 100%;
+  flex-wrap: wrap;
+`;
+
+const FormRow = styled.div`
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 48%;
+
+  label {
+    font-size: 14px;
+    font-weight: 500;
+    margin-bottom: 5px;
+  }
+
+  input {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    font-size: 14px;
+  }
+`;
+
+const SubmitButton = styled.button`
+  width: 100%;
+  padding: 12px;
+  margin-top: 20px;
+  background-color: #028248;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  font-size: 16px;
+  cursor: pointer;
+
+  &:hover {
+    background-color: #026b3b;
+  }
+`;

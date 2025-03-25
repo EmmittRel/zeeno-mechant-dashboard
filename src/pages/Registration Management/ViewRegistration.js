@@ -4,40 +4,60 @@ import DashboardLayout from '../../components/DashboardLayout';
 import { useToken } from '../../context/TokenContext';
 import Modal from '../../components/modal';
 import { MdDelete, MdEdit, MdVisibility } from 'react-icons/md';
-import useS3Upload from '../../hooks/useS3Upload'; // Import the hook
+import useS3Upload from '../../hooks/useS3Upload';
 
 const ViewRegistration = () => {
   const [events, setEvents] = useState([]);
+  const [userEvents, setUserEvents] = useState([]); // Filtered events for current user
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [userId, setUserId] = useState(null); // To store current user's ID
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [message, setMessage] = useState(null);
   const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
   const [eventToDelete, setEventToDelete] = useState(null);
-  const [selectedFile, setSelectedFile] = useState(null); // State for the selected file
-  const [uploadProgress, setUploadProgress] = useState(0); // State for upload progress
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const { token } = useToken();
 
-  // Call the hook at the top level
   const { uploadFile } = useS3Upload();
 
-  // Fetch events on component mount
   useEffect(() => {
-    const fetchEvents = async () => {
+    const fetchUserAndEvents = async () => {
       try {
-        const response = await fetch('https://auth.zeenopay.com/events/forms/', {
-          method: 'GET',
+        // First fetch the current user's data
+        const userResponse = await fetch('https://auth.zeenopay.com/users/me/', {
           headers: {
             Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
           },
         });
-        if (!response.ok) {
+        
+        if (!userResponse.ok) {
+          throw new Error('Failed to fetch user data');
+        }
+        
+        const userData = await userResponse.json();
+        setUserId(userData.id);
+
+        // Then fetch all events
+        const eventsResponse = await fetch('https://auth.zeenopay.com/events/forms/', {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        
+        if (!eventsResponse.ok) {
           throw new Error('Failed to fetch events');
         }
-        const data = await response.json();
-        setEvents(data);
+        
+        const eventsData = await eventsResponse.json();
+        setEvents(eventsData);
+        
+        // Filter events where owner matches current user ID
+        const filteredEvents = eventsData.filter(event => event.owner === userData.id);
+        setUserEvents(filteredEvents);
+        
         setLoading(false);
       } catch (err) {
         setError(err.message);
@@ -45,10 +65,9 @@ const ViewRegistration = () => {
       }
     };
 
-    fetchEvents();
+    fetchUserAndEvents();
   }, [token]);
 
-  // Clear message after 3 seconds
   useEffect(() => {
     if (message) {
       const timer = setTimeout(() => {
@@ -59,10 +78,9 @@ const ViewRegistration = () => {
     }
   }, [message]);
 
-  // Delete an event
   const deleteEvent = async () => {
     try {
-      const response = await fetch(`https://auth.zeenopay.com/events/forms/${parseInt(eventToDelete)}/`, {
+      const response = await fetch(`https://auth.zeenopay.com/events/forms/${eventToDelete}/`, {
         method: 'DELETE',
         headers: {
           Authorization: `Bearer ${token}`,
@@ -74,7 +92,10 @@ const ViewRegistration = () => {
         throw new Error('Failed to delete event');
       }
 
+      // Update both events and userEvents state
       setEvents(events.filter((event) => event.id !== eventToDelete));
+      setUserEvents(userEvents.filter((event) => event.id !== eventToDelete));
+      
       setMessage({ type: 'success', text: 'Event deleted successfully' });
       setShowDeleteConfirmation(false);
     } catch (err) {
@@ -83,7 +104,6 @@ const ViewRegistration = () => {
     }
   };
 
-  // Handle edit button click
   const handleEditClick = (event) => {
     setSelectedEvent(event);
     setShowModal(true);
@@ -92,11 +112,10 @@ const ViewRegistration = () => {
   const handleCloseModal = () => {
     setShowModal(false);
     setSelectedEvent(null);
-    setSelectedFile(null); 
-    setUploadProgress(0); 
+    setSelectedFile(null);
+    setUploadProgress(0);
   };
 
-  // Handle event update (including image upload)
   const handleUpdateEvent = async (updatedEvent) => {
     try {
       let imgUrl = updatedEvent.img;
@@ -130,7 +149,12 @@ const ViewRegistration = () => {
         throw new Error('Failed to update event');
       }
 
-      setEvents(events.map((event) => (event.id === updatedEvent.id ? { ...updatedEvent, img: imgUrl } : event)));
+      const data = await response.json();
+      
+      // Update both events and userEvents state
+      setEvents(events.map((event) => (event.id === updatedEvent.id ? data : event)));
+      setUserEvents(userEvents.map((event) => (event.id === updatedEvent.id ? data : event)));
+      
       setMessage({ type: 'success', text: '🎉 Event updated successfully' });
       handleCloseModal();
     } catch (err) {
@@ -138,7 +162,6 @@ const ViewRegistration = () => {
     }
   };
 
-  // Loading state
   if (loading) {
     return (
       <DashboardLayout>
@@ -147,7 +170,6 @@ const ViewRegistration = () => {
     );
   }
 
-  // Error state
   if (error) {
     return (
       <DashboardLayout>
@@ -158,47 +180,46 @@ const ViewRegistration = () => {
 
   return (
     <DashboardLayout>
-      <h3 style={styles.header}>List of Voting Events</h3>
+      <h3 style={styles.header}>My Voting Events</h3>
       {message && (
-        <div
-          style={{
-            ...styles.message,
-            backgroundColor: message.type === 'success' ? '#d4edda' : '#f44336',
-          }}
-        >
+        <div style={{ ...styles.message, backgroundColor: message.type === 'success' ? '#d4edda' : '#f44336' }}>
           {message.text}
         </div>
       )}
       <div style={styles.cardContainer}>
-        {events.map((event) => (
-          <div
-            key={event.id}
-            style={styles.cardLink}
-            onMouseEnter={(e) => (e.currentTarget.style.transform = 'scale(1.05)')}
-            onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
-          >
-            <div style={styles.card}>
-              <div style={styles.imageWrapper}>
-                {event.img ? (
-                  <img src={event.img} alt={event.title || 'Event Image'} style={styles.image} />
-                ) : (
-                  <div style={styles.noImage}>No Image Available</div>
-                )}
-              </div>
-              <div style={styles.cardContent}>
-                <h2 style={styles.cardTitle}>{event.title}</h2>
-                <div style={styles.buttonContainer}>
-                  <Link to={`/viewregistration/${event.id}`} style={styles.viewButton}>
-                    <MdVisibility style={styles.icon} /> View Report
-                  </Link>
-                  <button onClick={() => handleEditClick(event)} style={styles.editButton}>
-                    <MdEdit style={styles.icon} /> Edit
-                  </button>
+        {userEvents.length > 0 ? (
+          userEvents.map((event) => (
+            <div
+              key={event.id}
+              style={styles.cardLink}
+              onMouseEnter={(e) => (e.currentTarget.style.transform = 'scale(1.05)')}
+              onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
+            >
+              <div style={styles.card}>
+                <div style={styles.imageWrapper}>
+                  {event.img ? (
+                    <img src={event.img} alt={event.title || 'Event Image'} style={styles.image} />
+                  ) : (
+                    <div style={styles.noImage}>No Image Available</div>
+                  )}
+                </div>
+                <div style={styles.cardContent}>
+                  <h2 style={styles.cardTitle}>{event.title}</h2>
+                  <div style={styles.buttonContainer}>
+                    <Link to={`/viewregistration/${event.id}`} style={styles.viewButton}>
+                      <MdVisibility style={styles.icon} /> View Report
+                    </Link>
+                    <button onClick={() => handleEditClick(event)} style={styles.editButton}>
+                      <MdEdit style={styles.icon} /> Edit
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        ))}
+          ))
+        ) : (
+          <p>No events found. Create your first event!</p>
+        )}
       </div>
 
       {showModal && selectedEvent && (
@@ -239,10 +260,10 @@ const ViewRegistration = () => {
                   onChange={(e) => {
                     const file = e.target.files[0];
                     if (file) {
-                      setSelectedFile(file); 
+                      setSelectedFile(file);
                       const reader = new FileReader();
                       reader.onloadend = () => {
-                        setSelectedEvent({ ...selectedEvent, img: reader.result }); 
+                        setSelectedEvent({ ...selectedEvent, img: reader.result });
                       };
                       reader.readAsDataURL(file);
                     }

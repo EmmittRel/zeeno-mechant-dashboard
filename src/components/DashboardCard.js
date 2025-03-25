@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import axios from "axios";
+import { useToken } from "../context/TokenContext";
 
 const DashboardCard = () => {
   const [data, setData] = useState({
@@ -10,22 +11,49 @@ const DashboardCard = () => {
     votingEvents: 0,
     ticketingEvents: 0,
   });
+  const [userId, setUserId] = useState(null);
+  const { token } = useToken();
 
   useEffect(() => {
-    const fetchData = async () => {
+    const fetchUserAndEvents = async () => {
       try {
+        //fetch the current user's data
+        const userResponse = await axios.get("https://auth.zeenopay.com/users/me/", {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        
+        setUserId(userResponse.data.id);
+
+        //fetch all events
         const [registrationRes, votingRes, ticketingRes] = await Promise.all([
-          axios.get("https://auth.zeenopay.com/events/forms/"),
-          axios.get("https://auth.zeenopay.com/events"),
-          axios.get("https://auth.zeenopay.com/events/ticket-categories/"),
+          axios.get("https://auth.zeenopay.com/events/forms/", {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }),
+          axios.get("https://auth.zeenopay.com/events", {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }),
+          axios.get("https://auth.zeenopay.com/events/ticket-categories/", {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }),
         ]);
 
-        const registrationEvents = registrationRes.data.length;
-        const votingEvents = votingRes.data.length;
-        const ticketingEvents = ticketingRes.data.length;
+        // Filter events by owner id
+        const filterByOwner = (events) => events.filter(event => event.owner === userResponse.data.id);
+
+        const registrationEvents = filterByOwner(registrationRes.data).length;
+        const votingEvents = filterByOwner(votingRes.data).length;
+        const ticketingEvents = filterByOwner(ticketingRes.data).length;
         const totalEvents = registrationEvents + votingEvents + ticketingEvents;
 
-        const completedEvents = votingRes.data.filter(
+        const completedEvents = filterByOwner(votingRes.data).filter(
           (event) => event.status === "completed"
         ).length;
 
@@ -44,13 +72,13 @@ const DashboardCard = () => {
       }
     };
 
-    fetchData();
-  }, []);
+    fetchUserAndEvents();
+  }, [token]);
 
   const cards = [
-    { image: "https://i.ibb.co/gFcnBhR0/IMG-2035.png", title: "Event Organized", value: data.totalEvents },
+    { image: "https://i.ibb.co/gFcnBhR0/IMG-2035.png", title: "My Events", value: data.totalEvents },
     { image: "https://i.ibb.co/WNMZ72j7/IMG-2037.png", title: "Completed Events", value: data.completedEvents },
-    { image: "https://i.ibb.co/bjhM75JQ/IMG-2038.png", title: "Ongoing Event", value: data.ongoingEvents },
+    { image: "https://i.ibb.co/bjhM75JQ/IMG-2038.png", title: "Ongoing Events", value: data.ongoingEvents },
     { image: "https://i.ibb.co/Zz89ZtHD/IMG-2044.png", title: "Registration Events", value: data.registrationEvents },
     { image: "https://i.ibb.co/NdrtMFcC/IMG-2034.png", title: "Voting Events", value: data.votingEvents },
     { image: "https://i.ibb.co/6JDmR2q4/IMG-2036.png", title: "Ticketing Events", value: data.ticketingEvents },
@@ -180,7 +208,6 @@ const DashboardCard = () => {
           .cards-container {
             display: grid;
             grid-template-columns: repeat(2, 1fr);
-            // gap: 10px;
             padding: 0 20px; 
             margin-top: 100px;
           }
@@ -207,7 +234,6 @@ const DashboardCard = () => {
           .card-content { align-items: flex-start; }
         }
 
-        /* Styles for screens below 300px */
         @media (max-width: 300px) {
           .cards-container {
             gap: 5px; 

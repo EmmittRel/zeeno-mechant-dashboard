@@ -20,7 +20,6 @@ function OngoingCard() {
           ))}
         </div>
       );
-    
 }
 
 export default OngoingCard
