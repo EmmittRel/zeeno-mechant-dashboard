@@ -1,289 +1,371 @@
 import React, { useState, useEffect } from "react";
 import Chart from "react-apexcharts";
+import { FaDownload } from "react-icons/fa";
+import { useParams } from "react-router-dom";
 import { useToken } from "../../context/TokenContext";
+import { calculateVotes } from "../AmountCalculator";
 
-const RegistrationSalesChart = () => {
-  // Define processor categories
+const VoteByCountry = () => {
+  const { event_id } = useParams();
+  const { token } = useToken();
+  const [nepalVotes, setNepalVotes] = useState([]);
+  const [globalVotes, setGlobalVotes] = useState([]);
+  const [totalVotesNepal, setTotalVotesNepal] = useState(0);
+  const [totalVotesGlobal, setTotalVotesGlobal] = useState(0);
+  const [paymentInfo, setPaymentInfo] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
+
   const nepalProcessors = ["ESEWA", "KHALTI", "FONEPAY", "PRABHUPAY", "NQR", "QR"];
   const indiaProcessors = ["PHONEPE"];
   const internationalProcessors = ["PAYU", "STRIPE"];
 
-  const [registrationData, setRegistrationData] = useState([]);
-  const [paymentData, setPaymentData] = useState({});
-  const [eventId, setEventId] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const { token } = useToken();
-
-  // Fetch eventId from URL
   useEffect(() => {
-    const pathSegments = window.location.pathname.split("/");
-    const id = pathSegments[pathSegments.length - 1];
-    setEventId(id && !isNaN(id) ? Number(id) : null);
-  }, []);
-
-  // Fetch registration data
-  const fetchRegistrationData = async () => {
-    if (!eventId) return;
-
-    try {
-      const response = await fetch(
-        `https://auth.zeenopay.com/events/form/responses/${eventId}/`,
-        {
+    const fetchEventsData = async () => {
+      try {
+        const response = await fetch(`https://auth.zeenopay.com/events/`, {
           headers: {
             Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json"
-          }
-        }
-      );
-      const data = await response.json();
-      setRegistrationData(data.filter(item => item.form === eventId));
-    } catch (error) {
-      console.error("Registration data error:", error);
-      setError("Failed to load registration data");
-    }
-  };
-
-  // Enhanced payment data fetching
-  const fetchPaymentData = async () => {
-    try {
-      // Fetch from both endpoints
-      const [regularPayments, qrPayments] = await Promise.all([
-        fetch(`https://auth.zeenopay.com/payments/intents/?event_id=${eventId}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        }).then(res => res.ok ? res.json() : []),
-        
-        fetch(`https://auth.zeenopay.com/payments/qr/intents?event_id=${eventId}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        }).then(res => res.ok ? res.json() : [])
-      ]);
-
-      // Combine and filter successful payments
-      const allPayments = [...regularPayments, ...qrPayments];
-      const successfulPayments = allPayments.filter(
-        payment => payment.status === 'S' && payment.intent === 'F'
-      );
-
-      // Initialize payment amounts by category
-      const paymentAmounts = {
-        eSewa: 0,
-        Nepal: 0,
-        India: 0,
-        International: 0,
-        // Individual processors for detailed breakdown
-        KHALTI: 0,
-        FONEPAY: 0,
-        PRABHUPAY: 0,
-        NQR: 0,
-        QR: 0,
-        PHONEPE: 0,
-        PAYU: 0,
-        STRIPE: 0
-      };
-
-      // Process each payment
-      successfulPayments.forEach(payment => {
-        const processor = payment.processor?.toUpperCase();
-        const amount = parseFloat(payment.amount) || 0;
-
-        // Add to individual processor
-        if (paymentAmounts.hasOwnProperty(processor)) {
-          paymentAmounts[processor] += amount;
-        }
-
-        // Categorize payment
-        if (nepalProcessors.includes(processor)) {
-          paymentAmounts.Nepal += amount;
-          if (processor === "ESEWA") {
-            paymentAmounts.eSewa += amount;
-          }
-        } else if (indiaProcessors.includes(processor)) {
-          paymentAmounts.India += amount;
-        } else if (internationalProcessors.includes(processor)) {
-          paymentAmounts.International += amount;
-        }
-      });
-
-      setPaymentData(paymentAmounts);
-    } catch (error) {
-      console.error("Payment data error:", error);
-      setError("Failed to load payment data");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (eventId && token) {
-      Promise.all([fetchRegistrationData(), fetchPaymentData()])
-        .catch(error => {
-          console.error("Initialization error:", error);
-          setError("Failed to initialize data");
-          setLoading(false);
+          },
         });
-    }
-  }, [eventId, token]);
 
-  // Process registration data for chart
-  const processRegistrationData = () => {
-    const counts = {};
-    registrationData.forEach(item => {
-      const date = new Date(item.created_at).toLocaleDateString("en-US", {
-        day: "numeric",
-        month: "short"
-      });
-      counts[date] = (counts[date] || 0) + 1;
-    });
-    return Object.entries(counts)
-      .map(([date, count]) => ({ date, count }))
-      .sort((a, b) => new Date(a.date) - new Date(b.date));
+        if (!response.ok) {
+          throw new Error("Failed to fetch events data");
+        }
+
+        const data = await response.json();
+        const event = data.find((event) => event.id === parseInt(event_id));
+
+        if (event) {
+          setPaymentInfo(event.payment_info);
+        }
+      } catch (error) {
+        console.error("Error fetching events data:", error);
+      }
+    };
+
+    const fetchPaymentIntentsData = async () => {
+      try {
+        // Fetch regular payment intents
+        const response = await fetch(
+          `https://auth.zeenopay.com/payments/intents/?event_id=${event_id}`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+
+        if (!response.ok) {
+          throw new Error("Failed to fetch payment intents data");
+        }
+
+        const data = await response.json();
+
+        // Fetch QR/NQR payment intents
+        const qrResponse = await fetch(
+          `https://auth.zeenopay.com/payments/qr/intents?event_id=${event_id}`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+
+        if (!qrResponse.ok) {
+          throw new Error("Failed to fetch QR/NQR payment intents data");
+        }
+
+        const qrData = await qrResponse.json();
+
+        // Combine regular and QR/NQR payment intents
+        const allPaymentIntents = [...data, ...qrData];
+
+        // Filter payment intents to include only successful transactions (status === 'S')
+        const successfulPaymentIntents = allPaymentIntents.filter(
+          (item) => item.status === 'S'
+        );
+
+        // Process data for Nepal
+        const nepalData = successfulPaymentIntents.filter((item) =>
+          nepalProcessors.includes(item.processor)
+        );
+
+        // Calculate votes for each Nepal processor
+        const nepalVotesData = nepalProcessors.map((processor) => {
+          const processorData = nepalData.filter((item) => item.processor === processor);
+          const totalVotes = processorData.reduce((sum, item) => {
+            return sum + calculateVotes(item.amount, "NPR");
+          }, 0);
+          return totalVotes;
+        });
+
+        const totalNepalVotes = nepalVotesData.reduce((a, b) => a + b, 0);
+        setNepalVotes(nepalVotesData);
+        setTotalVotesNepal(totalNepalVotes);
+
+        // Process data for Global
+        const indiaData = successfulPaymentIntents.filter((item) =>
+          indiaProcessors.includes(item.processor)
+        );
+        const internationalData = successfulPaymentIntents.filter((item) =>
+          internationalProcessors.includes(item.processor)
+        );
+
+        // Calculate votes for India (INR currency)
+        const indiaVotes = indiaData
+          .map((item) => calculateVotes(item.amount, "INR"))
+          .reduce((a, b) => a + b, 0);
+
+        // Calculate votes for International (other currencies)
+        const internationalVotes = internationalData
+          .map((item) => {
+            let currency = "USD";
+            const processor = item.processor?.toUpperCase();
+
+            // Determine the currency based on the processor
+            if (processor === "STRIPE") {
+              currency = item.currency?.toUpperCase() || "USD";
+            } else if (processor === "PAYU") {
+              currency = "INR"; // PAYU uses INR
+            }
+
+            return calculateVotes(item.amount, currency);
+          })
+          .reduce((a, b) => a + b, 0);
+
+        setGlobalVotes([indiaVotes, internationalVotes]);
+        setTotalVotesGlobal(indiaVotes + internationalVotes);
+      } catch (error) {
+        console.error("Error fetching payment intents data:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    if (token) {
+      fetchEventsData().then(() => fetchPaymentIntentsData());
+    }
+  }, [event_id, token, paymentInfo]);
+
+  // Update labels for Nepal chart
+  const nepalLabels = nepalProcessors.map((processor) => {
+    if (processor === "NQR") return "NepalPayQR";
+    if (processor === "QR") return "FonePayQR";
+    if (processor === "FONEPAY") return "iMobile Banking";
+    return processor;
+  });
+
+  const pieOptionsNepal = {
+    chart: {
+      type: "pie",
+      height: 350,
+    },
+    labels: nepalLabels,
+    colors: ["green", "#200a69", "red", "orange", "skyblue", "blue"],
+    legend: { position: "bottom" },
   };
 
-  // Prepare chart data
-  const registrationCounts = processRegistrationData();
-  const activePaymentCategories = Object.entries(paymentData)
-    .filter(([key, value]) => 
-      ["eSewa", "Nepal", "India", "International"].includes(key) && value > 0
-    );
+  const pieOptionsGlobal = {
+    chart: {
+      type: "pie",
+      height: 350,
+    },
+    labels: ["Votes by Residents Within India", "International Votes"],
+    colors: ["#5F259F", "#FF5722"],
+    legend: { position: "bottom" },
+  };
+
+  // Check if there is no data
+  const hasNoData = nepalVotes.length === 0 && globalVotes.length === 0;
+  const hasNoNepalVotes = nepalVotes.length === 0 || nepalVotes.every((vote) => vote === 0);
+  const hasNoGlobalVotes = globalVotes.length === 0 || globalVotes.every((vote) => vote === 0);
 
   return (
-    <div className="dashboard-container">
-      {/* Header */}
-      <div className="dashboard-header">
-        <h2>Registration & Sales Analytics</h2>
-        <button className="export-button">Export Report</button>
+    <div className="chart-container">
+      <div className="header">
+        <h3>Vote Breakdown</h3>
+        <button className="export-btn">
+          <FaDownload className="export-icon" /> Export
+        </button>
       </div>
 
-      {/* Charts Section */}
-      {loading ? (
-        <div className="loading-indicator">Loading data...</div>
-      ) : error ? (
-        <div className="error-message">{error}</div>
+      {isLoading ? (
+        <div className="loading">Loading...</div>
+      ) : hasNoData ? (
+        <div className="no-data">No any vote data</div>
       ) : (
-        <div className="charts-grid">
-          {/* Registration Chart */}
-          <div className="chart-card">
-            <h3>Daily Registrations</h3>
-            {registrationCounts.length > 0 ? (
-              <Chart
-                options={{
-                  chart: { type: "bar", toolbar: { show: false } },
-                  xaxis: { categories: registrationCounts.map(item => item.date) },
-                  colors: ["#028248"],
-                  plotOptions: { bar: { columnWidth: "60%" } }
-                }}
-                series={[{
-                  name: "Registrations",
-                  data: registrationCounts.map(item => item.count)
-                }]}
-                type="bar"
-                height={350}
-              />
+        <div className="charts">
+          <div className="report">
+            <div className="chart-header">
+              <h3>Votes from Nepal</h3>
+            </div>
+            {hasNoNepalVotes ? (
+              <div className="no-nepal-votes">No any Votes from Nepal</div>
             ) : (
-              <div className="no-data">No registration data available</div>
-            )}
-          </div>
-
-          {/* Payment Chart */}
-          <div className="chart-card">
-            <h3>Payment Distribution</h3>
-            {activePaymentCategories.length > 0 ? (
               <>
                 <Chart
-                  options={{
-                    chart: { type: "pie" },
-                    labels: activePaymentCategories.map(([key]) => key),
-                    colors: ["#028248", "#36a2eb", "#ff6384", "#ffcd56"],
-                    legend: { position: "bottom" },
-                    dataLabels: {
-                      formatter: (val, { seriesIndex }) => {
-                        return `Rs. ${Math.floor(activePaymentCategories[seriesIndex][1])}`;
-                      }
-                    }
-                  }}
-                  series={activePaymentCategories.map(([, value]) => value)}
+                  options={pieOptionsNepal}
+                  series={nepalVotes}
                   type="pie"
                   height={350}
                 />
-                <div className="payment-details">
-                  {Object.entries(paymentData)
-                    .filter(([key, value]) => 
-                      !["eSewa", "Nepal", "India", "International"].includes(key) && value > 0
-                    )
-                    .map(([processor, amount]) => (
-                      <div key={processor} className="payment-item">
-                        <span>{processor}:</span>
-                        <span>Rs. {Math.floor(amount)}</span>
-                      </div>
-                    ))}
-                </div>
+                <div className="total-votes">Total Votes: {totalVotesNepal.toLocaleString()}</div>
               </>
+            )}
+          </div>
+
+          <div className="report">
+            <div className="chart-header">
+              <h3>Votes from Global</h3>
+            </div>
+            {hasNoGlobalVotes ? (
+              <div className="no-global-votes">No any Global Votes</div>
             ) : (
-              <div className="no-data">No payment data available</div>
+              <>
+                <Chart
+                  options={pieOptionsGlobal}
+                  series={globalVotes}
+                  type="pie"
+                  height={350}
+                />
+                <div className="total-votes">Total Votes: {totalVotesGlobal.toLocaleString()}</div>
+              </>
             )}
           </div>
         </div>
       )}
 
-      {/* Styles */}
       <style jsx>{`
-        .dashboard-container {
-          padding: 20px;
-          max-width: 1200px;
-          margin: 0 auto;
-        }
-        .dashboard-header {
+        .chart-container {
           display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin-bottom: 30px;
-        }
-        .export-button {
-          background: #028248;
-          color: white;
-          border: none;
-          padding: 8px 16px;
-          border-radius: 4px;
-          cursor: pointer;
-        }
-        .charts-grid {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 20px;
-        }
-        .chart-card {
-          background: white;
-          padding: 20px;
-          border-radius: 8px;
-          box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }
-        .payment-details {
-          margin-top: 20px;
-          display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-          gap: 10px;
-        }
-        .payment-item {
-          display: flex;
-          justify-content: space-between;
-          padding: 8px;
-          background: #f5f5f5;
-          border-radius: 4px;
-        }
-        .no-data, .loading-indicator, .error-message {
-          height: 200px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: #666;
-        }
-        .error-message {
-          color: #d32f2f;
+          flex-direction: column;
+          align-items: flex-start;
+          width: 100%;
+          padding-bottom: 20px;
         }
 
+        .header {
+          width: 100%;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 10px;
+          margin-top: 30px;
+        }
+
+        .header h2 {
+          margin: 0;
+          font-size: 24px;
+        }
+
+        .export-btn {
+          background-color: #028248;
+          color: white;
+          padding: 10px 20px;
+          border: none;
+          border-radius: 4px;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          font-size: 16px;
+        }
+
+        .export-btn:hover {
+          background-color: #028248;
+        }
+
+        .charts {
+          display: flex;
+          justify-content: space-between;
+          width: 100%;
+          gap: 20px;
+        }
+
+        .report {
+          background-color: white;
+          padding: 20px;
+          border-radius: 8px;
+          width: 48%;
+          box-shadow: 0px 4px 12px rgba(0, 0, 0, 0.1);
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: space-between;
+        }
+
+        .chart-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          width: 100%;
+        }
+
+        .total-votes {
+          text-align: center;
+          font-size: 18px;
+          margin-top: 20px;
+          padding: 10px;
+          width: 100%;
+          box-sizing: border-box;
+        }
+
+        .loading,
+        .no-data,
+        .no-nepal-votes,
+        .no-global-votes {
+          text-align: center;
+          font-size: 18px;
+          margin-top: 20px;
+          width: 100%;
+        }
+
+        /* Mobile responsiveness */
         @media (max-width: 768px) {
-          .charts-grid {
-            grid-template-columns: 1fr;
+          .header {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 10px;
+          }
+
+          .header h2 {
+            font-size: 20px;
+          }
+
+          .export-btn {
+            display: none;
+          }
+
+          .charts {
+            flex-direction: column;
+            gap: 20px;
+          }
+
+          .report {
+            width: 85%;
+            margin-bottom: 20px;
+          }
+
+          .total-votes {
+            font-size: 16px;
+          }
+
+          .report .apexcharts-canvas {
+            height: 250px !important;
+          }
+        }
+
+        @media (max-width: 480px) {
+          .header h2 {
+            font-size: 18px;
+          }
+
+          .total-votes {
+            font-size: 14px;
+          }
+
+          .report .apexcharts-canvas {
+            height: 200px !important;
           }
         }
       `}</style>
@@ -291,4 +373,4 @@ const RegistrationSalesChart = () => {
   );
 };
 
-export default RegistrationSalesChart;
+export default VoteByCountry;

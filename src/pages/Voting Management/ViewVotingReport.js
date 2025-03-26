@@ -11,6 +11,8 @@ const ViewReport = () => {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+   const [userEvents, setUserEvents] = useState([]); 
+    const [userId, setUserId] = useState(null);
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [showAddCandidateModal, setShowAddCandidateModal] = useState(false);
@@ -24,24 +26,45 @@ const ViewReport = () => {
   // Call the hook at the top level
   const { uploadFile } = useS3Upload();
 
-  useEffect(() => {
-    const fetchEvents = async () => {
-      try {
-        const response = await fetch('https://auth.zeenopay.com/events/');
-        if (!response.ok) {
-          throw new Error('Failed to fetch events');
+   useEffect(() => {
+      const fetchUserAndEvents = async () => {
+        try {
+          // First, fetch the user data to get the user ID
+          const userResponse = await fetch('https://auth.zeenopay.com/users/me/', {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          });
+          
+          if (!userResponse.ok) {
+            throw new Error('Failed to fetch user data');
+          }
+          
+          const userData = await userResponse.json();
+          setUserId(userData.id);
+  
+          // Then fetch all events
+          const eventsResponse = await fetch('https://auth.zeenopay.com/events/');
+          if (!eventsResponse.ok) {
+            throw new Error('Failed to fetch events');
+          }
+          
+          const eventsData = await eventsResponse.json();
+          setEvents(eventsData);
+          
+          // Filter events where owner matches user ID
+          const filteredEvents = eventsData.filter(event => event.owner === userData.id);
+          setUserEvents(filteredEvents);
+          
+          setLoading(false);
+        } catch (err) {
+          setError(err.message);
+          setLoading(false);
         }
-        const data = await response.json();
-        setEvents(data);
-        setLoading(false);
-      } catch (err) {
-        setError(err.message);
-        setLoading(false);
-      }
-    };
-
-    fetchEvents();
-  }, []);
+      };
+  
+      fetchUserAndEvents();
+    }, [token]);
 
   const deleteEvent = async () => {
     try {
@@ -163,36 +186,40 @@ const ViewReport = () => {
         </div>
       )}
       <div style={styles.cardContainer}>
-        {events.map((event) => (
-          <div
-            key={event.id}
-            style={styles.cardLink}
-            onMouseEnter={(e) => (e.currentTarget.style.transform = 'scale(1.05)')}
-            onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
-          >
-            <div style={styles.card}>
-              <div style={styles.imageWrapper}>
-                {event.img ? (
-                  <img src={event.img} alt={event.title || 'Event Image'} style={styles.image} />
-                ) : (
-                  <div style={styles.noImage}>No Image Available</div>
-                )}
-              </div>
-              <div style={styles.cardContent}>
-                <h2 style={styles.cardTitle}>{`${event.title || 'No Title'}`}</h2>
-                <div style={styles.buttonContainer}>
-                  <Link to={`/eventreport/${event.id}`} style={styles.viewButton}>
-                    <MdVisibility style={styles.icon} /> View Report
-                  </Link>
-                  <button onClick={() => handleEditClick(event)} style={styles.editButton}>
-                    <MdEdit style={styles.icon} /> Edit
-                  </button>
-                </div>
-              </div>
+              {userEvents.length > 0 ? (
+                userEvents.map((event) => (
+                  <div
+                    key={event.id}
+                    style={styles.cardLink}
+                    onMouseEnter={(e) => (e.currentTarget.style.transform = 'scale(1.05)')}
+                    onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
+                  >
+                    <div style={styles.card}>
+                      <div style={styles.imageWrapper}>
+                        {event.img ? (
+                          <img src={event.img} alt={event.title || 'Event Image'} style={styles.image} />
+                        ) : (
+                          <div style={styles.noImage}>No Image Available</div>
+                        )}
+                      </div>
+                      <div style={styles.cardContent}>
+                        <h2 style={styles.cardTitle}>{`${event.title || 'No Title'}`}</h2>
+                        <div style={styles.buttonContainer}>
+                          <Link to={`/eventreport/${event.id}`} style={styles.viewButton}>
+                            <MdVisibility style={styles.icon} /> View Report
+                          </Link>
+                          <button onClick={() => handleEditClick(event)} style={styles.editButton}>
+                            <MdEdit style={styles.icon} /> Edit
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p>No events found. Create your first event!</p>
+              )}
             </div>
-          </div>
-        ))}
-      </div>
 
       {/* Edit Event Modal */}
       {showModal && selectedEvent && (

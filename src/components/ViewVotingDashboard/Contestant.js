@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { calculateVotes } from '../AmountCalculator'; // Import the utility function
+import { calculateVotes } from '../AmountCalculator'; 
 
 const Contestant = ({ event_id, token }) => {
   const [candidates, setCandidates] = useState([]);
@@ -126,7 +126,7 @@ const Contestant = ({ event_id, token }) => {
         // Sort candidates by votes in descending order and take top 6
         const sortedCandidates = candidatesWithVotes
           .sort((a, b) => b.votes - a.votes)
-          .slice(0, 6); // Only take the top 6 candidates
+          .slice(0, 6); 
 
         setCandidates(sortedCandidates);
         setLoading(false);
