@@ -56,9 +56,10 @@ const RegistrationSalesChart = () => {
     }
   };
 
-  // Fetch payment data from API
+  // Fetch payment data from API including QR payments
   const fetchPaymentData = async () => {
     try {
+      // Fetch regular payment intents
       const response = await fetch("https://auth.zeenopay.com/payments/intents/", {
         method: "GET",
         headers: {
@@ -80,13 +81,49 @@ const RegistrationSalesChart = () => {
           payment.event_id === eventId && 
           payment.intent === "F" && 
           payment.status === "S" &&
-          ["ESEWA", "KHALTI", "PHONEPE", "FONEPAY", "QR"].includes(payment.processor)
+          ["ESEWA", "KHALTI", "PHONEPE", "FONEPAY"].includes(payment.processor)
       );
 
-      console.log("Filtered Payments (successful and specific processors):", filteredPayments);
+      // Fetch QR payment intents
+      const qrResponse = await fetch(
+        `https://auth.zeenopay.com/payments/qr/intents?event_id=${eventId}`,
+        {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (!qrResponse.ok) {
+        throw new Error(`QR Payment Error: ${qrResponse.statusText}`);
+      }
+
+      const qrData = await qrResponse.json();
+      console.log("QR Payment API Response:", qrData);
+
+      // Process QR payments (assuming similar structure to regular payments)
+      const qrPayments = qrData
+        .filter(
+          (payment) =>
+            payment.event_id === eventId &&
+            payment.intent === "F" &&
+            payment.status === "S"
+        )
+        .map((payment) => ({
+          ...payment,
+          processor: "QR", // Ensure processor is set to QR
+        }));
+
+      console.log("Filtered QR Payments:", qrPayments);
+
+      // Combine both regular and QR payments
+      const allPayments = [...filteredPayments, ...qrPayments];
+      console.log("All Combined Payments:", allPayments);
 
       const paymentAmounts = {};
-      filteredPayments.forEach((payment) => {
+      allPayments.forEach((payment) => {
         const processor = payment.processor;
         const amount = parseFloat(payment.amount) || 0;
 

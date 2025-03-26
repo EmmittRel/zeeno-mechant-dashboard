@@ -18,6 +18,7 @@ const TableComponent = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const { token } = useToken();
+  const [paymentIntents, setPaymentIntents] = useState([]);
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -46,7 +47,32 @@ const TableComponent = () => {
     setIsEventIdLoading(false);
   }, []);
 
-  // Transform API data
+  // Fetch payment intents data
+  const fetchPaymentIntents = async () => {
+    try {
+      const response = await fetch(
+        `https://auth.zeenopay.com/payments/intents/?event_id=${eventId}`,
+        {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Payment intents network error: ${response.statusText}`);
+      }
+
+      const paymentData = await response.json();
+      setPaymentIntents(paymentData);
+    } catch (error) {
+      console.error("Error fetching payment intents:", error);
+    }
+  };
+
+  // Transform API data with payment status check
   const transformApiData = (apiResponseArray) => {
     return apiResponseArray.map((apiResponse) => {
       try {
@@ -56,12 +82,17 @@ const TableComponent = () => {
         }
 
         const response = apiResponse.response;
+        
+        // Check if action_id exists in payment intents with success status
+        const hasPayment = paymentIntents.some(
+          intent => intent.action_id === apiResponse.action_id && intent.status === 'success'
+        );
 
         return {
           name: response.name || "N/A",
           email: response.email || "N/A",
           phone: response.contactNumber || "N/A",
-          paymentStatus: apiResponse.payment ? "Paid" : "Pending",
+          paymentStatus: hasPayment ? "Paid" : "Pending",
           status: "Pending", // Default status since it's not in the response
           imageUrl: response.image || "",
           age: response.age || "N/A",
@@ -75,7 +106,8 @@ const TableComponent = () => {
           optionalNumber: response.optionalNumber || "N/A",
           source: response.source || "N/A",
           temporaryAddress: response.temporaryAddress || "N/A",
-          permanentAddress: response.permanentAddress || "N/A"
+          permanentAddress: response.permanentAddress || "N/A",
+          action_id: apiResponse.action_id 
         };
       } catch (error) {
         console.error("Error parsing response:", error);
@@ -93,6 +125,10 @@ const TableComponent = () => {
           throw new Error("Form ID is required");
         }
 
+        // First fetch payment intents
+        await fetchPaymentIntents();
+
+        // Then fetch form responses
         const response = await fetch(
           `https://auth.zeenopay.com/events/form/responses/${eventId}/`,
           {
@@ -385,8 +421,9 @@ const TableComponent = () => {
                   <th>Age</th>
                   <th>Location</th>
                   <th>Guardian Name</th>
-                  <th>Reason</th>
-                  <th>Status</th>
+                  {/* <th>Reason</th> */}
+                  <th>Payment Status</th>
+                  {/* <th>Status</th> */}
                   <th>Action</th>
                 </tr>
               </thead>
@@ -427,8 +464,11 @@ const TableComponent = () => {
                     <td>{row.age}</td>
                     <td>{row.location}</td>
                     <td>{row.parentName}</td>
-                    <td>{row.category}</td>
-                    <td
+                    {/* <td>{row.category}</td> */}
+                    <td className={row.paymentStatus === "Paid" ? "paid" : "pending"}>
+                      {row.paymentStatus}
+                    </td>
+                    {/* <td
                       className={
                         row.status === "Approved"
                           ? "approved"
@@ -438,7 +478,7 @@ const TableComponent = () => {
                       }
                     >
                       {row.status}
-                    </td>
+                    </td> */}
                     <td>
                       <button className="action-btn">
                         <a href={`tel:${row.phone}`} style={{ color: 'inherit', textDecoration: 'none' }}>
@@ -592,12 +632,32 @@ const TableComponent = () => {
           margin: 10px 0;
         }
 
+        /* Status styles */
+        .paid {
+          color: #28a745;
+          font-weight: bold;
+        }
+        
+        .pending {
+          color: #ffc107;
+          font-weight: bold;
+        }
+        
+        .approved {
+          color: #28a745;
+          font-weight: bold;
+        }
+        
+        .rejected {
+          color: #dc3545;
+          font-weight: bold;
+        }
+
         /* Mobile-specific styles */
         @media (max-width: 768px) {
-
-         .table-container {
-          padding: 20px;
-        }
+          .table-container {
+            padding: 20px;
+          }
 
           .table-header {
             flex-direction: column; 
