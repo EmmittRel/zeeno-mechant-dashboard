@@ -1,11 +1,19 @@
 import React, { useState } from 'react';
 import { DndProvider, useDrag, useDrop } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
-import { FaArrowUp, FaArrowDown, FaEye, FaEyeSlash } from 'react-icons/fa';
+import { FaArrowUp, FaArrowDown, FaEye, FaEyeSlash, FaPlus, FaTrash } from 'react-icons/fa';
 import { useToken } from '../../context/TokenContext';
-import useS3Upload from '../../hooks/useS3Upload'; 
+import useS3Upload from '../../hooks/useS3Upload';
 
 const API_URL = 'https://auth.zeenopay.com/events/forms/';
+
+const fieldTypes = [
+  { value: 'text', label: 'Text Input' },
+  { value: 'textarea', label: 'Text Area' },
+  { value: 'radio', label: 'Radio Buttons' },
+  { value: 'dropdown', label: 'Dropdown' },
+  { value: 'date', label: 'Date Picker' }
+];
 
 const initialFormState = {
   title: '',
@@ -121,6 +129,111 @@ const initialFormState = {
   shareable_link: '',
 };
 
+const CustomQuestionCard = ({ question, index, moveCard, totalQuestions, updateQuestion, toggleQuestionVisibility, removeQuestion }) => {
+  const [{ isDragging }, drag] = useDrag({
+    type: 'QUESTION',
+    item: { index },
+    collect: (monitor) => ({
+      isDragging: monitor.isDragging(),
+    }),
+  });
+
+  const [, drop] = useDrop({
+    accept: 'QUESTION',
+    hover: (item, monitor) => {
+      if (!monitor.isOver({ shallow: true })) return;
+      const dragIndex = item.index;
+      const hoverIndex = index;
+      if (dragIndex === hoverIndex) return;
+      moveCard(dragIndex, hoverIndex);
+      item.index = hoverIndex;
+    },
+  });
+
+  const moveQuestion = (direction) => {
+    const newIndex = direction === 'up' ? index - 1 : index + 1;
+    moveCard(index, newIndex);
+  };
+
+  return (
+    <div
+      ref={(node) => drag(drop(node))}
+      className={`question-card ${isDragging ? 'opacity-50' : ''}`}
+      style={{ cursor: 'move' }}
+    >
+      <div className="flex items-center gap-2 mb-4">
+        <div className="flex-1">
+          <div className="question-header">
+            <input
+              type="text"
+              className="input-field"
+              value={question.title}
+              onChange={(e) => updateQuestion(index, 'title', e.target.value)}
+              placeholder="Enter custom question"
+            />
+            <select
+              className="select-field"
+              value={question.type}
+              onChange={(e) => updateQuestion(index, 'type', e.target.value)}
+            >
+              {fieldTypes.map((type) => (
+                <option key={type.value} value={type.value}>
+                  {type.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div className="checkbox-group">
+        <label className="checkbox-label">
+          <input
+            type="checkbox"
+            checked={question.isRequired}
+            onChange={(e) => updateQuestion(index, 'isRequired', e.target.checked)}
+          />
+          Required
+        </label>
+      </div>
+
+      <div className="action-buttons">
+        <button
+          type="button"
+          className="icon-button"
+          onClick={() => moveQuestion('up')}
+          disabled={index === 0}
+        >
+          <FaArrowUp size={14} />
+        </button>
+        <button
+          type="button"
+          className="icon-button"
+          onClick={() => moveQuestion('down')}
+          disabled={index === totalQuestions - 1}
+        >
+          <FaArrowDown size={14} />
+        </button>
+        <button
+          type="button"
+          className="icon-button delete"
+          onClick={() => removeQuestion(index)}
+        >
+          <FaTrash size={14} />
+        </button>
+        <button
+          type="button"
+          className="icon-button"
+          onClick={() => toggleQuestionVisibility(index)}
+          title={question.isVisible ? 'Hide Question' : 'Show Question'}
+        >
+          {question.isVisible ? <FaEye size={14} /> : <FaEyeSlash size={14} />}
+        </button>
+      </div>
+    </div>
+  );
+};
+
 const QuestionCard = ({ question, index, moveCard, totalQuestions, updateQuestion, toggleQuestionVisibility }) => {
   const [{ isDragging }, drag] = useDrag({
     type: 'QUESTION',
@@ -214,7 +327,6 @@ const EventDetailsForm = () => {
     setUploadError(null);
 
     try {
-      // Step 1: Upload the image (if a file is selected)
       let imageUrl = formData.img; 
       if (selectedFile) {
         imageUrl = await new Promise((resolve, reject) => {
@@ -233,7 +345,6 @@ const EventDetailsForm = () => {
         setFormData((prev) => ({ ...prev, img: imageUrl })); 
       }
 
-      // Step 2: Submit the form data
       const visibleQuestions = formData.questions.filter((question) => question.isVisible);
 
       const submissionData = {
@@ -253,7 +364,7 @@ const EventDetailsForm = () => {
         }),
       };
 
-      const response = await fetch('https://auth.zeenopay.com/events/forms/', {
+      const response = await fetch(API_URL, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token.token}`,
@@ -310,6 +421,28 @@ const EventDetailsForm = () => {
     updateFormData('questions', newQuestions);
   };
 
+  const addCustomQuestion = () => {
+    const newQuestions = [
+      ...formData.questions,
+      {
+        title: '',
+        type: 'text',
+        isRequired: false,
+        isVisible: true,
+        isCustom: true
+      }
+    ];
+    setFormData(prev => ({ ...prev, questions: newQuestions }));
+  };
+
+  const removeQuestion = (index) => {
+    if (formData.questions[index].isCustom) {
+      const newQuestions = [...formData.questions];
+      newQuestions.splice(index, 1);
+      setFormData(prev => ({ ...prev, questions: newQuestions }));
+    }
+  };
+
   return (
     <DndProvider backend={HTML5Backend}>
       <form onSubmit={handleSubmit} className="event-details-container">
@@ -336,7 +469,7 @@ const EventDetailsForm = () => {
                 type="text"
                 value={formData.org}
                 onChange={(e) => updateFormData('org', e.target.value)}
-                placeholder="Enter Event Name"
+                placeholder="Enter Organiser Name"
                 required
               />
             </div>
@@ -382,7 +515,6 @@ const EventDetailsForm = () => {
                 onChange={(e) => setSelectedFile(e.target.files[0])}
                 accept="image/*"
               />
-              {/* {selectedFile && <p>Selected File: {selectedFile.name}</p>} */}
               {uploadProgress > 0 && <p>Upload Progress: {uploadProgress}%</p>}
               {uploadError && <p className="error-message">{uploadError}</p>}
             </div>
@@ -420,19 +552,42 @@ const EventDetailsForm = () => {
         </div>
 
         <div className="registration-fields-section">
-          <h2 className="form-title">Registration Form Fields</h2>
+          <div className="flex justify-between items-center">
+            <h2 className="form-title">Registration Form Fields</h2>
+            <button
+              type="button"
+              className="add-button"
+              onClick={addCustomQuestion}
+            >
+              <FaPlus size={14} />
+              Add Custom Field
+            </button>
+          </div>
           <div className="form-builder">
             <div className="questions-grid">
               {formData.questions.map((question, index) => (
-                <QuestionCard
-                  key={index}
-                  question={question}
-                  index={index}
-                  totalQuestions={formData.questions.length}
-                  moveCard={moveQuestion}
-                  updateQuestion={updateQuestion}
-                  toggleQuestionVisibility={toggleQuestionVisibility}
-                />
+                question.isCustom ? (
+                  <CustomQuestionCard
+                    key={`custom-${index}`}
+                    question={question}
+                    index={index}
+                    totalQuestions={formData.questions.length}
+                    moveCard={moveQuestion}
+                    updateQuestion={updateQuestion}
+                    toggleQuestionVisibility={toggleQuestionVisibility}
+                    removeQuestion={removeQuestion}
+                  />
+                ) : (
+                  <QuestionCard
+                    key={`predefined-${index}`}
+                    question={question}
+                    index={index}
+                    totalQuestions={formData.questions.length}
+                    moveCard={moveQuestion}
+                    updateQuestion={updateQuestion}
+                    toggleQuestionVisibility={toggleQuestionVisibility}
+                  />
+                )
               ))}
             </div>
           </div>

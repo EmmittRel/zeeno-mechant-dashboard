@@ -82,7 +82,7 @@ const RegistrationCardComponent = () => {
     };
 
     fetchData();
-  }, [eventId]);
+  }, [eventId, token]);
 
   useEffect(() => {
     const fetchPayments = async () => {
@@ -102,26 +102,37 @@ const RegistrationCardComponent = () => {
         }
 
         const data = await response.json();
-
         const today = new Date().toISOString().split("T")[0];
 
-        // Filter payments by event_id, intent="F", and today's date
-        const todayPayments = data.filter((item) => {
+        // Filter payments by:
+        // 1. event_id matches
+        // 2. intent is "F" (payment)
+        // 3. status is "S" (successful)
+        // 4. processor is one of the specified ones
+        const allSuccessfulPayments = data.filter(
+          (item) => 
+            item.event_id === eventId && 
+            item.intent === "F" && 
+            item.status === "S" &&
+            ["ESEWA", "KHALTI", "PHONEPE", "FONEPAY", "QR"].includes(item.processor)
+        );
+
+        // Filter today's payments
+        const todayPayments = allSuccessfulPayments.filter((item) => {
           const updatedDate = new Date(item.updated_at).toISOString().split("T")[0];
-          return item.event_id === eventId && item.intent === "F" && updatedDate === today;
+          return updatedDate === today;
         });
 
-        const totalFeesToday = todayPayments.reduce((sum, item) => sum + parseFloat(item.amount), 0);
+        // Calculate totals
+        const totalFeesToday = todayPayments.reduce(
+          (sum, item) => sum + parseFloat(item.amount), 0
+        );
+        const totalFees = allSuccessfulPayments.reduce(
+          (sum, item) => sum + parseFloat(item.amount), 0
+        );
 
         // Remove decimal places
         setFeesCollectedToday(Math.floor(totalFeesToday));
-
-        // Filter payments by event_id and intent="F"
-        const totalFees = data
-          .filter((item) => item.event_id === eventId && item.intent === "F")
-          .reduce((sum, item) => sum + parseFloat(item.amount), 0);
-
-        // Remove decimal places
         setFeesCollected(Math.floor(totalFees));
       } catch (error) {
         console.error("Error fetching payment data:", error);
@@ -130,7 +141,7 @@ const RegistrationCardComponent = () => {
     };
 
     fetchPayments();
-  }, [eventId]); // Add eventId as a dependency
+  }, [eventId, token]);
 
   const cards = [
     {
@@ -305,7 +316,8 @@ const RegistrationCardComponent = () => {
         }
 
         .card-value{
-        font-size: 14px;}
+          font-size: 14px;
+        }
 
         /* Styles for screens below 300px */
         @media (max-width: 300px) {

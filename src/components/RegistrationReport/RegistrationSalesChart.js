@@ -74,22 +74,23 @@ const RegistrationSalesChart = () => {
       const data = await response.json();
       console.log("Payment API Response (Raw):", data);
 
+      // Filter for successful payments (status === 'S') and specific processors
       const filteredPayments = data.filter(
-        (payment) => payment.event_id === eventId && payment.intent === "F"
+        (payment) => 
+          payment.event_id === eventId && 
+          payment.intent === "F" && 
+          payment.status === "S" &&
+          ["ESEWA", "KHALTI", "PHONEPE", "FONEPAY", "QR"].includes(payment.processor)
       );
 
-      console.log("Filtered Payments (intent=F):", filteredPayments);
+      console.log("Filtered Payments (successful and specific processors):", filteredPayments);
 
       const paymentAmounts = {};
       filteredPayments.forEach((payment) => {
         const processor = payment.processor;
         const amount = parseFloat(payment.amount) || 0;
 
-        if (["PHONEPE", "PAYU", "STRIPE"].includes(processor)) {
-          paymentAmounts["International"] = (paymentAmounts["International"] || 0) + amount;
-        } else {
-          paymentAmounts[processor] = (paymentAmounts[processor] || 0) + amount;
-        }
+        paymentAmounts[processor] = (paymentAmounts[processor] || 0) + amount;
       });
 
       console.log("Grouped Payment Amounts:", paymentAmounts);
@@ -127,14 +128,106 @@ const RegistrationSalesChart = () => {
 
   const registrationCounts = processRegistrationData();
 
-  // Bar chart options
+  // Enhanced bar chart options with hover effects
   const barOptions = {
-    chart: { type: "bar", height: 350, toolbar: { show: false } },
-    plotOptions: { bar: { columnWidth: "50%" } },
-    dataLabels: { enabled: false },
-    xaxis: { categories: registrationCounts.map((item) => item.date) },
-    yaxis: { labels: { formatter: (value) => Math.floor(value) } },
+    chart: {
+      type: "bar",
+      height: 350,
+      toolbar: { show: false },
+      animations: {
+        enabled: true,
+        easing: 'easeinout',
+        speed: 800,
+        animateGradually: {
+          enabled: true,
+          delay: 150
+        },
+        dynamicAnimation: {
+          enabled: true,
+          speed: 350
+        }
+      }
+    },
+    plotOptions: {
+      bar: {
+        columnWidth: "50%",
+        borderRadius: 4,
+        dataLabels: {
+          position: 'top',
+        },
+      }
+    },
+    dataLabels: {
+      enabled: false
+    },
+    xaxis: {
+      categories: registrationCounts.map((item) => item.date),
+      labels: {
+        style: {
+          fontFamily: 'Poppins, sans-serif',
+        },
+      },
+      axisBorder: {
+        show: false
+      },
+      axisTicks: {
+        show: false
+      }
+    },
+    yaxis: {
+      labels: {
+        formatter: (value) => Math.floor(value),
+        style: {
+          fontFamily: 'Poppins, sans-serif',
+        },
+      },
+      grid: {
+        show: true,
+        borderColor: 'rgba(0, 0, 0, 0.1)',
+        strokeDashArray: 3
+      }
+    },
     colors: ["#028248"],
+    states: {
+      hover: {
+        filter: {
+          type: 'lighten',
+          value: 0.15
+        }
+      },
+      active: {
+        filter: {
+          type: 'darken',
+          value: 0.35
+        }
+      }
+    },
+    fill: {
+      opacity: 1,
+      type: 'solid',
+      gradient: {
+        shade: 'dark',
+        type: "vertical",
+        shadeIntensity: 0.5,
+        gradientToColors: ["#02a958"],
+        inverseColors: false,
+        opacityFrom: 0.85,
+        opacityTo: 0.85,
+        stops: [0, 100]
+      }
+    },
+    tooltip: {
+      enabled: true,
+      style: {
+        fontSize: '12px',
+        fontFamily: 'Poppins, sans-serif',
+      },
+      y: {
+        formatter: function(val) {
+          return val + " registrations";
+        }
+      }
+    }
   };
 
   const barSeries = [
@@ -148,8 +241,17 @@ const RegistrationSalesChart = () => {
   const paymentProcessors = Object.keys(paymentData);
   const pieSeries = paymentProcessors.map((processor) => paymentData[processor]);
 
-  // Pie chart colors (same as in the pie chart)
-  const pieColors = ["#028248", "#ff6384", "#36a2eb", "#ffcd56", "#4bc0c0"];
+  // Define specific colors for each processor
+  const processorColors = {
+    ESEWA: "#028248",  
+    KHALTI: "purple", 
+    PHONEPE: "#4E79A7", 
+    FONEPAY: "#F28E2B",
+    QR: "#59A14F"    
+  };
+
+  // Get colors in the order of payment processors
+  const pieColors = paymentProcessors.map(processor => processorColors[processor] || "#8884d8");
 
   // Pie chart options
   const pieOptions = {
@@ -158,7 +260,7 @@ const RegistrationSalesChart = () => {
     colors: pieColors,
     legend: {
       position: "bottom",
-      showForMobile: false, // Custom property to control legend visibility
+      showForMobile: false,
     },
     dataLabels: {
       enabled: true,
@@ -228,8 +330,8 @@ const RegistrationSalesChart = () => {
         <div className="mobile-payment-labels">
           <h4>Payment Processors</h4>
           <ul>
-            {paymentProcessors.map((processor, index) => (
-              <li key={processor} style={{ color: pieColors[index % pieColors.length] }}>
+            {paymentProcessors.map((processor) => (
+              <li key={processor} style={{ color: processorColors[processor] || "#8884d8" }}>
                 {processor}: Rs. {Math.floor(paymentData[processor])}
               </li>
             ))}
@@ -273,10 +375,13 @@ const RegistrationSalesChart = () => {
           border-radius: 4px;
           cursor: pointer;
           font-size: 14px;
+          transition: all 0.3s ease;
         }
 
         .export-btn:hover {
           background-color: #026c3d;
+          transform: translateY(-2px);
+          box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
         }
 
         .charts {
@@ -293,6 +398,12 @@ const RegistrationSalesChart = () => {
           border-radius: 8px;
           width: 48%;
           box-shadow: 0px 4px 12px rgba(0, 0, 0, 0.1);
+          transition: all 0.3s ease;
+        }
+
+        .registration-chart:hover,
+        .sales-report:hover {
+          box-shadow: 0 8px 15px rgba(0, 0, 0, 0.2);
         }
 
         .total-sales {
@@ -314,14 +425,13 @@ const RegistrationSalesChart = () => {
 
         /* Mobile Responsive Styles */
         @media (max-width: 768px) {
-         .text-demoo h2{
+          .text-demoo h2 {
             font-size: 14px;
-            }
+          }
           .chart-container {
             padding: 20px;
             width: 80%;
             margin-top: -60px;
-
           }
 
           .charts {
@@ -367,7 +477,6 @@ const RegistrationSalesChart = () => {
             font-size: 14px;
             margin-bottom: 8px;
           }
-           
         }
 
         @media (min-width: 769px) {

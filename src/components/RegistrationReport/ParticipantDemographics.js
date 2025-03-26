@@ -52,11 +52,11 @@ const ParticipantDemographics = () => {
           filteredData.forEach((participant) => {
             const responseData = participant.response;
 
-            const age = Math.floor(parseFloat(responseData.additionalProp6)); 
+            const age = Math.floor(parseFloat(responseData.age)); 
             if (!isNaN(age)) {
               ageCounts[age] = (ageCounts[age] || 0) + 1;
             } else {
-              console.log("Invalid age value:", responseData.additionalProp6);
+              console.log("Invalid age value:", responseData.age);
             }
           });
 
@@ -78,18 +78,39 @@ const ParticipantDemographics = () => {
     };
 
     fetchData();
-  }, [eventId]);
+  }, [eventId, token]);
 
   const ageDistributionOptions = {
     chart: {
       type: "bar",
       toolbar: { show: false },
+      animations: {
+        enabled: true,
+        easing: 'easeinout',
+        speed: 800,
+        animateGradually: {
+          enabled: true,
+          delay: 150
+        },
+        dynamicAnimation: {
+          enabled: true,
+          speed: 350
+        }
+      }
     },
     plotOptions: {
       bar: {
         horizontal: false,
         columnWidth: "40%",
-      },
+        borderRadius: 4,
+        distributed: false,
+        dataLabels: {
+          position: 'top',
+        },
+      }
+    },
+    dataLabels: {
+      enabled: false
     },
     xaxis: {
       categories: ageDistributionData.map(data => data.age.toString()),
@@ -100,6 +121,12 @@ const ParticipantDemographics = () => {
           fontFamily: 'Poppins, sans-serif',
         },
       },
+      axisBorder: {
+        show: false
+      },
+      axisTicks: {
+        show: false
+      }
     },
     yaxis: {
       title: {
@@ -113,11 +140,69 @@ const ParticipantDemographics = () => {
       labels: {
         formatter: (value) => Math.floor(value),
         style: {
+          color: "#fff",
           fontFamily: 'Poppins, sans-serif',
         },
       },
+      grid: {
+        show: true,
+        borderColor: 'rgba(255, 255, 255, 0.1)',
+        strokeDashArray: 3
+      }
     },
-    colors: ["#fff"],
+    colors: ["#ffffff"],
+    states: {
+      hover: {
+        filter: {
+          type: 'lighten',
+          value: 0.15
+        }
+      },
+      active: {
+        filter: {
+          type: 'darken',
+          value: 0.35
+        }
+      }
+    },
+    fill: {
+      opacity: 1,
+      colors: ["#ffffff"],
+      type: 'solid',
+      gradient: {
+        shade: 'dark',
+        type: "vertical",
+        shadeIntensity: 0.5,
+        gradientToColors: ["#4facfe"],
+        inverseColors: false,
+        opacityFrom: 0.85,
+        opacityTo: 0.85,
+        stops: [0, 100]
+      }
+    },
+    tooltip: {
+      enabled: true,
+      style: {
+        fontSize: '12px',
+        fontFamily: 'Poppins, sans-serif',
+      },
+      theme: 'dark',
+      y: {
+        formatter: function(val) {
+          return val + " participants";
+        }
+      }
+    },
+    responsive: [{
+      breakpoint: 480,
+      options: {
+        plotOptions: {
+          bar: {
+            columnWidth: '30%'
+          }
+        }
+      }
+    }]
   };
 
   const ageDistributionSeries = [
@@ -195,10 +280,13 @@ const ParticipantDemographics = () => {
           font-size: 14px;
           white-space: nowrap; 
           font-family: 'Poppins', sans-serif;
+          transition: all 0.3s ease;
         }
 
         .export-button:hover {
-          background-color: #218838;
+          background-color: #0056b3;
+          transform: translateY(-2px);
+          box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
         }
 
         .participant-container {
@@ -214,9 +302,13 @@ const ParticipantDemographics = () => {
           padding-left: 20px;
           padding-right: 20px;
           padding-bottom: 30px;
-
           border-radius: 8px;
           width: 48%;
+          transition: all 0.3s ease;
+        }
+
+        .age-distribution:hover {
+          box-shadow: 0 8px 15px rgba(0, 0, 0, 0.2);
         }
 
         .age-distribution h3 {
@@ -230,8 +322,9 @@ const ParticipantDemographics = () => {
         .age-distribution p {
           font-size: 14px;
           margin-top: 10px;
-          color: #666;
+          color: #fff;
           font-family: 'Poppins', sans-serif;
+          opacity: 0.8;
         }
 
         .age-distribution span {
@@ -239,6 +332,7 @@ const ParticipantDemographics = () => {
           color: #fff;
           font-weight: 600;
           font-family: 'Poppins', sans-serif;
+          opacity: 0.8;
         }
 
         .no-data-message {
@@ -265,21 +359,23 @@ const ParticipantDemographics = () => {
           width: 100px;
           height: 100px;
           margin-bottom: 16px;
+          opacity: 0.7;
         }
 
         .no-data-text {
           font-size: 18px;
-          color: #fff; /* White color */
+          color: #fff;
           font-weight: bold;
           margin: 0;
         }
 
         .no-data-subtext {
           font-size: 14px;
-          color: #fff; /* White color */
+          color: #fff;
           margin: 8px 0 0;
           word-wrap: break-word;
           max-width: 100%;
+          opacity: 0.7;
         }
 
         /* Responsive styles */

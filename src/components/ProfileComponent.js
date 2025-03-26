@@ -1,7 +1,55 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { useToken } from '../context/TokenContext';
 
 const ProfileComponent = () => {
   const [activeStep, setActiveStep] = useState(0);
+  const [userData, setUserData] = useState(null);
+  const [kycData, setKycData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const { token } = useToken();
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        // First fetch user data to get the ID
+        const userResponse = await fetch("https://auth.zeenopay.com/users/me/", {
+          headers: {
+            // Add authorization headers if needed
+            Authorization: `Bearer ${token}`,
+          }
+        });
+
+        if (!userResponse.ok) {
+          throw new Error('Failed to fetch user data');
+        }
+
+        const userData = await userResponse.json();
+        setUserData(userData);
+
+        // Then fetch KYC data using the user ID
+        const kycResponse = await fetch(`https://auth.zeenopay.com/users/kyc/${userData.id}/`, {
+          headers: {
+            // Add authorization headers if needed
+            Authorization: `Bearer ${token}`,
+          }
+        });
+
+        if (!kycResponse.ok) {
+          throw new Error('Failed to fetch KYC data');
+        }
+
+        const kycData = await kycResponse.json();
+        setKycData(kycData);
+        setLoading(false);
+      } catch (err) {
+        setError(err.message);
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, []);
 
   const steps = [
     { label: "About Company", icon: "🏢" },
@@ -15,68 +63,106 @@ const ProfileComponent = () => {
   };
 
   const renderStepContent = () => {
+    if (loading) {
+      return <div>Loading...</div>;
+    }
+
+    if (error) {
+      return <div>Error: {error}</div>;
+    }
+
+    if (!kycData) {
+      return <div>No KYC data available</div>;
+    }
+
     switch (activeStep) {
       case 0:
         return (
           <div style={{ textAlign: "left", padding: "10px" }}>
-            <p><strong>Company Name:</strong> SMART GUFF PVT LTD</p>
-            <p><strong>Representative Name:</strong> Smart Guff</p>
-            <p><strong>Registered Date:</strong> 3/17/2025</p>
-            <p><strong>Company Description:</strong> Smart Guff is an event management company in Nepal specializing in organizing beauty pageants and various other events.</p>
+            <p><strong>Company Name:</strong> {kycData.company_name}</p>
+            <p><strong>Representative Name:</strong> {kycData.representative_name}</p>
+            <p><strong>Registered Date:</strong> {new Date(kycData.created_at).toLocaleDateString()}</p>
+            <p><strong>Company Description:</strong> {kycData.misc_kv || "Not provided"}</p>
           </div>
         );
       case 1:
         return (
           <div style={{ textAlign: "left", padding: "10px" }}>
-            <p><strong>Phone Number:</strong> +977 - 9899388920</p>
-            <p><strong>Landline Number:</strong> Not Provided</p>
-            <p><strong>Email Address:</strong> smartguff@gmail.com</p>
-            <p><strong>Company Address:</strong> Kathmandu, Nepal</p>
+            <p><strong>Phone Number:</strong> {kycData.phone_number}</p>
+            <p><strong>Optional Phone Number:</strong> {kycData.optional_phone_number || "Not provided"}</p>
+            <p><strong>Email Address:</strong> {kycData.email}</p>
+            <p><strong>Company Address:</strong> {kycData.company_address}</p>
           </div>
         );
       case 2:
         return (
           <div style={{ textAlign: "left", padding: "10px" }}>
-            <p><strong>Company Registration Number:</strong> </p>
-            <p><strong>Company Pan Number:</strong> </p>
+            <p><strong>Company Registration Number:</strong> {kycData.registration_number}</p>
+            <p><strong>Company Pan/VAT Number:</strong> {kycData.pan_vat_certificate_number}</p>
+            <p><strong>Authorized Person Citizenship Number:</strong> {kycData.authorized_person_citizenship_number || "Not provided"}</p>
           </div>
         );
       case 3:
         return (
           <div style={{ textAlign: "left", display: "flex", flexWrap: "wrap", justifyContent: "space-between", padding: "10px" }}>
-            <div style={{ width: "100%", maxWidth: "48%", margin: "10px 0" }}>
-              <p>
-                <strong style={{ fontSize:"10px" }}>Company Registration Certificate:</strong>
-                <br />
-                <img
-                  style={{ width: "100%", borderRadius: "8px", marginTop: "10px" }}
-                  alt="Attached Document"
-                  src="https://i.ibb.co/ynCwb8Z/Screenshot-2024-12-29-172638.png"
-                />
-              </p>
-            </div>
-            <div style={{ width: "100%", maxWidth: "48%", margin: "10px 0" }}>
-              <p>
-                <strong style={{ fontSize:"10px" }}> Company PAN/VAT Certificate</strong>
-                <br />
-                <img
-                  style={{ width: "100%", borderRadius: "8px", marginTop: "10px" }}
-                  alt="Attached Document"
-                  src="https://i.ibb.co/ynCwb8Z/Screenshot-2024-12-29-172638.png"
-                />
-              </p>
-            </div>
-            <div style={{ width: "100%", maxWidth: "48%", margin: "10px 0" }}>
-              <p>
-                <strong style={{ fontSize:"10px" }}>Citizenship of Authorized Person</strong>
-                <br />
-                <img
-                  style={{ width: "100%", borderRadius: "8px", marginTop: "10px" }}
-                  alt="Attached Document"
-                  src="https://i.ibb.co/ynCwb8Z/Screenshot-2024-12-29-172638.png"
-                />
-              </p>
-            </div>
+            {kycData.registration_certificate_url && (
+              <div style={{ width: "100%", maxWidth: "48%", margin: "10px 0" }}>
+                <p>
+                  <strong style={{ fontSize:"10px" }}>Company Registration Certificate:</strong>
+                  <br />
+                  <img
+                    style={{ width: "100%", borderRadius: "8px", marginTop: "10px" }}
+                    alt="Registration Certificate"
+                    src={kycData.registration_certificate_url}
+                  />
+                </p>
+              </div>
+            )}
+            {kycData.pan_vat_certificate_url && (
+              <div style={{ width: "100%", maxWidth: "48%", margin: "10px 0" }}>
+                <p>
+                  <strong style={{ fontSize:"10px" }}>Company PAN/VAT Certificate</strong>
+                  <br />
+                  <img
+                    style={{ width: "100%", borderRadius: "8px", marginTop: "10px" }}
+                    alt="PAN/VAT Certificate"
+                    src={kycData.pan_vat_certificate_url}
+                  />
+                </p>
+              </div>
+            )}
+            {kycData.authorized_person_citizenship_url && (
+              <div style={{ width: "100%", maxWidth: "48%", margin: "10px 0" }}>
+                <p>
+                  <strong style={{ fontSize:"10px" }}>Citizenship of Authorized Person</strong>
+                  <br />
+                  <img
+                    style={{ width: "100%", borderRadius: "8px", marginTop: "10px" }}
+                    alt="Citizenship Document"
+                    src={kycData.authorized_person_citizenship_url}
+                  />
+                </p>
+              </div>
+            )}
+            {kycData.tax_clearance_url && (
+              <div style={{ width: "100%", maxWidth: "48%", margin: "10px 0" }}>
+                <p>
+                  <strong style={{ fontSize:"10px" }}>Tax Clearance Certificate</strong>
+                  <br />
+                  <img
+                    style={{ width: "100%", borderRadius: "8px", marginTop: "10px" }}
+                    alt="Tax Clearance Document"
+                    src={kycData.tax_clearance_url}
+                  />
+                </p>
+              </div>
+            )}
+            {!kycData.registration_certificate_url && 
+             !kycData.pan_vat_certificate_url && 
+             !kycData.authorized_person_citizenship_url && 
+             !kycData.tax_clearance_url && (
+              <p>No documents uploaded</p>
+            )}
           </div>
         );
       default:
@@ -96,8 +182,12 @@ const ProfileComponent = () => {
         alt="logo"
         src="https://i.ibb.co/HdffZky/zeenopay-logo-removebg-preview.png"
       />
-      <h2 style={{ fontSize: "1.5rem", marginBottom: "10px", fontWeight: "600" }}>SMART GUFF PVT LTD.</h2>
-      <p style={{ fontSize: "1rem", color: "#666", marginBottom: "20px" }}>KYC Verified</p>
+      <h2 style={{ fontSize: "1.5rem", marginBottom: "10px", fontWeight: "600" }}>
+        {kycData?.company_name || "Loading..."}
+      </h2>
+      <p style={{ fontSize: "1rem", color: "#666", marginBottom: "20px" }}>
+        {kycData?.status === "A" ? "KYC Verified" : "KYC Pending"}
+      </p>
 
       {/* Buttons Section */}
       <div
