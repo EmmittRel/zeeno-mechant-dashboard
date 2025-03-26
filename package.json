@@ -68,5 +68,8 @@
       "last 1 safari version"
     ]
   },
-  "proxy": "https://auth.zeenopay.com"
+  "proxy": "https://auth.zeenopay.com",
+  "devDependencies": {
+    "eslint": "^7.32.0"
+  }
 }
