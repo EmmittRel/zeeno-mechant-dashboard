@@ -1,7 +1,6 @@
 import React, { useState } from "react";
 import useS3Upload from "../hooks/useS3Upload";
 import { useToken } from "../context/TokenContext";
-import styled from "styled-components";
 
 const KycComponent = () => {
   const { token } = useToken();
@@ -68,11 +67,21 @@ const KycComponent = () => {
   };
 
   return (
-    <FormContainer onSubmit={handleSubmit}>
+    <form 
+      onSubmit={handleSubmit}
+      style={{
+        maxWidth: "700px",
+        margin: "auto",
+        padding: "20px",
+        background: "#fff",
+        borderRadius: "10px",
+        boxShadow: "0px 4px 10px rgba(0, 0, 0, 0.1)"
+      }}
+    >
       <h2>KYC Verification Form</h2>
       <p>Verify your KYC to unlock full access to the dashboard.</p>
 
-      <FormGrid>
+      <div style={{ display: "flex", flexDirection: "column", gap: "15px" }}>
         {[  
           ["company_name", "Company Name", "representative_name", "Representative Name"],
           ["email", "Email", "phone_number", "Phone Number"],
@@ -80,98 +89,93 @@ const KycComponent = () => {
           ["registration_number", "Company Registration Number", "pan_vat_certificate_number", "PAN/VAT Certificate Number"],
           ["authorized_person_citizenship_number", "Authorized Person Citizenship Number"]
         ].map(([name1, label1, name2, label2], index) => (
-          <FormRowContainer key={index}>
-            <FormRow>
-              <label>{label1}</label>
-              <input type="text" name={name1} placeholder={`Enter ${label1}`} value={formData[name1]} onChange={handleChange} />
-            </FormRow>
+          <div key={index} style={{ display: "flex", gap: "15px", width: "100%", flexWrap: "wrap" }}>
+            <div style={{ display: "flex", flexDirection: "column", flex: 1, minWidth: "48%" }}>
+              <label style={{ fontSize: "14px", fontWeight: "500", marginBottom: "5px" }}>{label1}</label>
+              <input 
+                type="text" 
+                name={name1} 
+                placeholder={`Enter ${label1}`} 
+                value={formData[name1]} 
+                onChange={handleChange}
+                style={{
+                  width: "100%",
+                  padding: "10px",
+                  border: "1px solid #ccc",
+                  borderRadius: "5px",
+                  fontSize: "14px"
+                }}
+              />
+            </div>
             {name2 && (
-              <FormRow>
-                <label>{label2}</label>
-                <input type="text" name={name2} placeholder={`Enter ${label2}`} value={formData[name2]} onChange={handleChange} />
-              </FormRow>
+              <div style={{ display: "flex", flexDirection: "column", flex: 1, minWidth: "48%" }}>
+                <label style={{ fontSize: "14px", fontWeight: "500", marginBottom: "5px" }}>{label2}</label>
+                <input 
+                  type="text" 
+                  name={name2} 
+                  placeholder={`Enter ${label2}`} 
+                  value={formData[name2]} 
+                  onChange={handleChange}
+                  style={{
+                    width: "100%",
+                    padding: "10px",
+                    border: "1px solid #ccc",
+                    borderRadius: "5px",
+                    fontSize: "14px"
+                  }}
+                />
+              </div>
             )}
-          </FormRowContainer>
+          </div>
         ))}
 
         {/* File Upload Fields */}
-        <FormRow>
-          <label>Authorized Person Citizenship</label>
-          <input type="file" accept="image/*" onChange={(e) => handleFileUpload(e, "authorized_person_citizenship_url")} />
-        </FormRow>
-        <FormRow>
-          <label>Registration Certificate</label>
-          <input type="file" accept="image/*" onChange={(e) => handleFileUpload(e, "registration_certificate_url")} />
-        </FormRow>
-        <FormRow>
-          <label>PAN/VAT Certificate</label>
-          <input type="file" accept="image/*" onChange={(e) => handleFileUpload(e, "pan_vat_certificate_url")} />
-        </FormRow>
-      </FormGrid>
+        <div style={{ display: "flex", flexDirection: "column", flex: 1, minWidth: "48%" }}>
+          <label style={{ fontSize: "14px", fontWeight: "500", marginBottom: "5px" }}>Authorized Person Citizenship</label>
+          <input 
+            type="file" 
+            accept="image/*" 
+            onChange={(e) => handleFileUpload(e, "authorized_person_citizenship_url")}
+          />
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", flex: 1, minWidth: "48%" }}>
+          <label style={{ fontSize: "14px", fontWeight: "500", marginBottom: "5px" }}>Registration Certificate</label>
+          <input 
+            type="file" 
+            accept="image/*" 
+            onChange={(e) => handleFileUpload(e, "registration_certificate_url")}
+          />
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", flex: 1, minWidth: "48%" }}>
+          <label style={{ fontSize: "14px", fontWeight: "500", marginBottom: "5px" }}>PAN/VAT Certificate</label>
+          <input 
+            type="file" 
+            accept="image/*" 
+            onChange={(e) => handleFileUpload(e, "pan_vat_certificate_url")}
+          />
+        </div>
+      </div>
 
-      <SubmitButton type="submit">Submit</SubmitButton>
-    </FormContainer>
+      <button 
+        type="submit"
+        style={{
+          width: "100%",
+          padding: "12px",
+          marginTop: "20px",
+          backgroundColor: "#028248",
+          color: "white",
+          border: "none",
+          borderRadius: "5px",
+          fontSize: "16px",
+          cursor: "pointer"
+        }}
+        onMouseOver={(e) => e.target.style.backgroundColor = "#026b3b"}
+        onMouseOut={(e) => e.target.style.backgroundColor = "#028248"}
+      >
+        Submit
+      </button>
+    </form>
   );
 };
 
 export default KycComponent;
-
-// Styled Components
-const FormContainer = styled.form`
-  max-width: 700px;
-  margin: auto;
-  padding: 20px;
-  background: #fff;
-  border-radius: 10px;
-  box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.1);
-`;
-
-const FormGrid = styled.div`
-  display: flex;
-  flex-direction: column;
-  gap: 15px;
-`;
-
-const FormRowContainer = styled.div`
-  display: flex;
-  gap: 15px;
-  width: 100%;
-  flex-wrap: wrap;
-`;
-
-const FormRow = styled.div`
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-width: 48%;
-
-  label {
-    font-size: 14px;
-    font-weight: 500;
-    margin-bottom: 5px;
-  }
-
-  input {
-    width: 100%;
-    padding: 10px;
-    border: 1px solid #ccc;
-    border-radius: 5px;
-    font-size: 14px;
-  }
-`;
-
-const SubmitButton = styled.button`
-  width: 100%;
-  padding: 12px;
-  margin-top: 20px;
-  background-color: #028248;
-  color: white;
-  border: none;
-  border-radius: 5px;
-  font-size: 16px;
-  cursor: pointer;
-
-  &:hover {
-    background-color: #026b3b;
-  }
-`;
