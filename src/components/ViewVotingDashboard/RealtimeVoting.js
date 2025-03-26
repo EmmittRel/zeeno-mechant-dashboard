@@ -296,8 +296,9 @@ const RealtimeVoting = ({ id: event_id }) => {
             };
           });
 
-        // Combine all data and sort by date
+        // Combine all data, filter out 0 votes, and sort by date
         const combinedData = [...processedRegularData, ...processedQRData, ...processedNQRData]
+          .filter(item => item.votes > 0) // Filter out entries with 0 votes
           .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
         setData(combinedData);
@@ -366,7 +367,7 @@ const RealtimeVoting = ({ id: event_id }) => {
           <h3>Realtime Voting Data</h3>
         </div>
         <div className="actions">
-          <button className="export-btn" onClick={handleExport} disabled={loading}>
+          <button className="export-btn" onClick={handleExport} disabled={loading || data.length === 0}>
             <FaDownload className="export-icon" /> Export
           </button>
         </div>
@@ -425,7 +426,7 @@ const RealtimeVoting = ({ id: event_id }) => {
             ) : (
               <tr>
                 <td colSpan="8" style={{ textAlign: 'center' }}>
-                  {loading ? 'Loading data...' : 'No data available for this event.'}
+                  {loading ? 'Loading data...' : 'No voting data available for this event.'}
                 </td>
               </tr>
             )}
