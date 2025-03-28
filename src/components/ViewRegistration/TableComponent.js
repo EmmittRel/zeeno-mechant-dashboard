@@ -47,10 +47,11 @@ const TableComponent = () => {
     setIsEventIdLoading(false);
   }, []);
 
-  // Fetch payment intents data
+  // Fetch both regular and QR payment intents
   const fetchPaymentIntents = async () => {
     try {
-      const response = await fetch(
+      // Regular payment intents
+      const regularResponse = await fetch(
         `https://auth.zeenopay.com/payments/intents/?event_id=${eventId}`,
         {
           method: "GET",
@@ -61,60 +62,113 @@ const TableComponent = () => {
         }
       );
 
-      if (!response.ok) {
-        throw new Error(`Payment intents network error: ${response.statusText}`);
+      // QR payment intents
+      const qrResponse = await fetch(
+        `https://auth.zeenopay.com/payments/qr/intents?event_id=${eventId}`,
+        {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (!regularResponse.ok || !qrResponse.ok) {
+        throw new Error(`Payment intents network error`);
       }
 
-      const paymentData = await response.json();
-      setPaymentIntents(paymentData);
+      const regularData = await regularResponse.json();
+      const qrData = await qrResponse.json();
+
+      // Combine both payment intents
+      setPaymentIntents([...regularData, ...qrData]);
     } catch (error) {
       console.error("Error fetching payment intents:", error);
     }
   };
-
-  // Transform API data with payment status check
-  const transformApiData = (apiResponseArray) => {
-    return apiResponseArray.map((apiResponse) => {
-      try {
-        if (!apiResponse.response) {
-          console.error("Missing response in API response:", apiResponse);
-          return {};
-        }
-
-        const response = apiResponse.response;
-        
-        // Check if action_id exists in payment intents with success status
-        const hasPayment = paymentIntents.some(
-          intent => intent.action_id === apiResponse.action_id && intent.status === 'success'
-        );
-
-        return {
-          name: response.name || "N/A",
-          email: response.email || "N/A",
-          phone: response.contactNumber || "N/A",
-          paymentStatus: hasPayment ? "Paid" : "Pending",
-          status: "Pending", // Default status since it's not in the response
-          imageUrl: response.image || "",
-          age: response.age || "N/A",
-          location: response.temporaryAddress || response.permanentAddress || "N/A",
-          parentName: response.guardianName || "N/A",
-          category: response.reason || "N/A",
-          dateOfBirth: response.dateOfBirth || "N/A",
-          gender: response.gender || "N/A",
-          weight: response.weight || "N/A",
-          height: response.height || "N/A",
-          optionalNumber: response.optionalNumber || "N/A",
-          source: response.source || "N/A",
-          temporaryAddress: response.temporaryAddress || "N/A",
-          permanentAddress: response.permanentAddress || "N/A",
-          action_id: apiResponse.action_id 
-        };
-      } catch (error) {
-        console.error("Error parsing response:", error);
+ // Transform API data with payment status check
+const transformApiData = (apiResponseArray) => {
+  return apiResponseArray.map((apiResponse) => {
+    try {
+      if (!apiResponse.response) {
+        console.error("Missing response in API response:", apiResponse);
         return {};
       }
-    });
-  };
+
+      const response = apiResponse.response;
+      
+      // Check if action_id exists in payment intents
+      const matchingPayment = paymentIntents.find(
+        intent => intent.action_id === apiResponse.action_id
+      );
+
+      // Determine payment status
+      let paymentStatus = "Pending";
+      if (matchingPayment) {
+        // Check for QR payments (ESEWA, KHALTI, FONEPAY, PHONEPE)
+        if (matchingPayment.processor && ['ESEWA', 'KHALTI', 'FONEPAY', 'PHONEPE'].includes(matchingPayment.processor)) {
+          // Handle QR payment statuses
+          switch(matchingPayment.status) {
+            case 'S':
+              paymentStatus = "Paid";
+              break;
+            case 'P':
+              paymentStatus = "Pending";
+              break;
+            case 'F':
+              paymentStatus = "Failed";
+              break;
+            default:
+              paymentStatus = "Pending";
+          }
+        } 
+        // Check for regular payments
+        else {
+          // Handle regular payment statuses
+          switch(matchingPayment.status) {
+            case 'success':
+              paymentStatus = "Paid";
+              break;
+            case 'pending':
+              paymentStatus = "Pending";
+              break;
+            case 'failed':
+              paymentStatus = "Failed";
+              break;
+            default:
+              paymentStatus = "Pending";
+          }
+        }
+      }
+
+      return {
+        name: response.name || "N/A",
+        email: response.email || "N/A",
+        phone: response.contactNumber || "N/A",
+        paymentStatus: paymentStatus,
+        status: "Pending",
+        imageUrl: response.image || "",
+        age: response.age || "N/A",
+        location: response.temporaryAddress || response.permanentAddress || "N/A",
+        parentName: response.guardianName || "N/A",
+        category: response.reason || "N/A",
+        dateOfBirth: response.dateOfBirth || "N/A",
+        gender: response.gender || "N/A",
+        weight: response.weight || "N/A",
+        height: response.height || "N/A",
+        optionalNumber: response.optionalNumber || "N/A",
+        source: response.source || "N/A",
+        temporaryAddress: response.temporaryAddress || "N/A",
+        permanentAddress: response.permanentAddress || "N/A",
+        action_id: apiResponse.action_id 
+      };
+    } catch (error) {
+      console.error("Error parsing response:", error);
+      return {};
+    }
+  });
+};
 
   // Fetch data when eventId is available
   useEffect(() => {
@@ -386,6 +440,7 @@ const TableComponent = () => {
                 <option value="">All Payments</option>
                 <option value="Paid">Paid</option>
                 <option value="Pending">Pending</option>
+                <option value="Failed">Failed</option>
               </select>
               <select
                 name="approvalStatus"
@@ -421,9 +476,7 @@ const TableComponent = () => {
                   <th>Age</th>
                   <th>Location</th>
                   <th>Guardian Name</th>
-                  {/* <th>Reason</th> */}
                   <th>Payment Status</th>
-                  {/* <th>Status</th> */}
                   <th>Action</th>
                 </tr>
               </thead>
@@ -464,21 +517,13 @@ const TableComponent = () => {
                     <td>{row.age}</td>
                     <td>{row.location}</td>
                     <td>{row.parentName}</td>
-                    {/* <td>{row.category}</td> */}
-                    <td className={row.paymentStatus === "Paid" ? "paid" : "pending"}>
+                    <td className={
+                      row.paymentStatus === "Paid" ? "paid" : 
+                      row.paymentStatus === "Failed" ? "failed" : 
+                      "pending"
+                    }>
                       {row.paymentStatus}
                     </td>
-                    {/* <td
-                      className={
-                        row.status === "Approved"
-                          ? "approved"
-                          : row.status === "Rejected"
-                          ? "rejected"
-                          : "pending"
-                      }
-                    >
-                      {row.status}
-                    </td> */}
                     <td>
                       <button className="action-btn">
                         <a href={`tel:${row.phone}`} style={{ color: 'inherit', textDecoration: 'none' }}>
@@ -531,6 +576,7 @@ const TableComponent = () => {
       <style>{`
         .table-container {
           font-family: 'Poppins', sans-serif;
+          padding: 20px;
         }
 
         .header-title {
@@ -538,6 +584,7 @@ const TableComponent = () => {
           font-size: 18px;
           margin-bottom: 20px;
           color: #333;
+          font-weight: 600;
         }
 
         .loading-container, .error-container {
@@ -553,6 +600,7 @@ const TableComponent = () => {
           animation: spin 1s linear infinite;
           font-size: 48px;
           color: #0062FF;
+          margin-bottom: 20px;
         }
 
         @keyframes spin {
@@ -560,10 +608,23 @@ const TableComponent = () => {
           100% { transform: rotate(360deg); }
         }
 
+        .error-container button {
+          margin-top: 20px;
+          padding: 8px 16px;
+          background-color: #0062FF;
+          color: white;
+          border: none;
+          border-radius: 4px;
+          cursor: pointer;
+        }
+
         .no-data {
           text-align: center;
-          padding: 20px;
-          background-color: #f1f1f1;
+          padding: 40px;
+          background-color: #f8f9fa;
+          border-radius: 8px;
+          margin-top: 20px;
+          color: #6c757d;
         }
 
         .table-header {
@@ -571,65 +632,129 @@ const TableComponent = () => {
           justify-content: space-between;
           align-items: center;
           margin-bottom: 20px;
+          flex-wrap: wrap;
+          gap: 15px;
         }
 
-        .pagination {
+        .search-bar {
+          position: relative;
+          flex: 1;
+          min-width: 250px;
+        }
+
+        .search-icon {
+          position: absolute;
+          left: 12px;
+          top: 50%;
+          transform: translateY(-50%);
+          color: #6c757d;
+        }
+
+        .search-bar input {
+          width: 100%;
+          padding: 10px 15px 10px 40px;
+          border: 1px solid #ddd;
+          border-radius: 8px;
+          font-size: 14px;
+          transition: border-color 0.3s;
+        }
+
+        .search-bar input:focus {
+          outline: none;
+          border-color: #0062FF;
+        }
+
+        .actions {
           display: flex;
-          justify-content: center;
           align-items: center;
-          margin-top: 20px;
+          gap: 15px;
+          flex-wrap: wrap;
         }
 
-        .pagination button {
-          margin: 0 10px;
-          padding: 5px 10px;
+        .export-btn {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 10px 15px;
+          background-color: #28a745;
+          color: white;
+          border: none;
+          border-radius: 8px;
+          cursor: pointer;
+          font-size: 14px;
+          transition: background-color 0.3s;
+        }
+
+        .export-btn:hover {
+          background-color: #218838;
+        }
+
+        .filter {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+
+        .filter-text {
+          font-size: 14px;
+          color: #495057;
+        }
+
+        .filter-dropdowns {
+          display: flex;
+          gap: 10px;
+        }
+
+        .filter-dropdown {
+          padding: 8px 12px;
+          border: 1px solid #ddd;
+          border-radius: 6px;
+          font-size: 14px;
+          background-color: white;
           cursor: pointer;
         }
 
-        .pagination button:disabled {
-          cursor: not-allowed;
-          opacity: 0.5;
-        }
-
-        .modal-overlay {
-          position: fixed;
-          top: 0;
-          left: 0;
-          width: 100%;
-          height: 100%;
-          background-color: rgba(0, 0, 0, 0.5);
-          display: flex;
-          justify-content: center;
-          align-items: center;
-          z-index: 1000;
-        }
-
-        .modal-content {
-          background-color: #fff;
-          padding: 20px;
+        .table-wrapper {
+          overflow-x: auto;
+          background-color: white;
           border-radius: 8px;
-          width: 400px;
-          max-width: 90%;
-          box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-          position: relative;
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
         }
 
-        .modal-close-btn {
-          position: absolute;
-          top: 10px;
-          right: 10px;
+        table {
+          width: 100%;
+          border-collapse: collapse;
+        }
+
+        th, td {
+          padding: 12px 15px;
+          text-align: left;
+          border-bottom: 1px solid #eee;
+        }
+
+        th {
+          background-color: #f8f9fa;
+          font-weight: 600;
+          color: #495057;
+          white-space: nowrap;
+        }
+
+        tr:hover {
+          background-color: #f8f9fa;
+        }
+
+        .action-btn {
           background: none;
           border: none;
-          font-size: 20px;
+          color: #6c757d;
           cursor: pointer;
+          font-size: 16px;
+          margin: 0 5px;
+          transition: color 0.3s;
         }
 
-        .modal-details {
-          margin-top: 20px;
-        }
-
-        .modal-details p {
-          margin: 10px 0;
+        .action-btn:hover {
+          color: #0062FF;
         }
 
         /* Status styles */
@@ -643,49 +768,79 @@ const TableComponent = () => {
           font-weight: bold;
         }
         
-        .approved {
-          color: #28a745;
-          font-weight: bold;
-        }
-        
-        .rejected {
+        .failed {
           color: #dc3545;
           font-weight: bold;
         }
 
+        .pagination {
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          margin-top: 20px;
+          padding: 20px 0;
+          gap: 15px;
+        }
+
+        .pagination button {
+          padding: 8px 16px;
+          background-color: #f8f9fa;
+          border: 1px solid #ddd;
+          border-radius: 6px;
+          cursor: pointer;
+          transition: all 0.3s;
+        }
+
+        .pagination button:hover:not(:disabled) {
+          background-color: #0062FF;
+          color: white;
+          border-color: #0062FF;
+        }
+
+        .pagination button:disabled {
+          cursor: not-allowed;
+          opacity: 0.6;
+        }
+
+        .pagination span {
+          font-size: 14px;
+          color: #495057;
+        }
+
         /* Mobile-specific styles */
         @media (max-width: 768px) {
-          .table-container {
-            padding: 20px;
-          }
-
           .table-header {
-            flex-direction: column; 
-            gap: 10px; 
-          }
-
-          .filter-dropdowns {
-            display: flex;
-            flex-direction: row;
-            gap: 10px;
-          }
-
-          .filter-dropdown {
-            width: 155px;
+            flex-direction: column;
+            align-items: flex-start;
           }
 
           .search-bar {
-            width: 100%; 
-            margin-top: 10px;
+            width: 100%;
           }
 
-          .search-bar input {
-            width: 100%; 
+          .actions {
+            width: 100%;
+            justify-content: space-between;
+          }
+
+          .filter {
+            width: 100%;
+            justify-content: space-between;
+          }
+
+          .filter-dropdowns {
+            width: 100%;
+            justify-content: flex-end;
           }
 
           /* Hide email column in responsive mode */
           .email-column {
             display: none;
+          }
+
+          th, td {
+            padding: 8px 10px;
+            font-size: 14px;
           }
         }
       `}</style>

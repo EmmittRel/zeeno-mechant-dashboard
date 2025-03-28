@@ -24,10 +24,53 @@ const CandidateTable = () => {
     key: null,
     direction: "asc",
   });
+  const [nqrTransactions, setNqrTransactions] = useState([]);
   const itemsPerPage = 10;
 
   const { token } = useToken();
   const { event_id } = useParams();
+
+  // Helper function to extract intent_id from NQR transaction
+  const getIntentIdFromNQR = (addenda1, addenda2) => {
+    try {
+      const combined = `${addenda1}-${addenda2}`;
+      const hexMatch = combined.match(/vnpr-([a-f0-9]+)/i);
+      return hexMatch?.[1] ? parseInt(hexMatch[1], 16) : null;
+    } catch (error) {
+      console.error('Error extracting intent_id from NQR:', error);
+      return null;
+    }
+  };
+
+  // Fetch NQR transactions
+  const fetchNQRTransactions = async () => {
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      
+      const response = await fetch('https://auth.zeenopay.com/payments/qr/transactions/static', {
+        method: 'POST',
+        headers: {
+          'accept': 'application/json',
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          'start_date': "2025-03-21",
+          'end_date': today
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch NQR data');
+      }
+
+      const result = await response.json();
+      return result.transactions?.responseBody?.filter(txn => txn.debitStatus === '000') || [];
+    } catch (error) {
+      console.error('Error fetching NQR transactions:', error);
+      return [];
+    }
+  };
 
   useEffect(() => {
     const fetchData = async () => {
@@ -47,7 +90,11 @@ const CandidateTable = () => {
       setError(null);
 
       try {
-        // Fetch event data to get payment_info
+        // First fetch NQR transactions
+        const nqrTransactions = await fetchNQRTransactions();
+        setNqrTransactions(nqrTransactions);
+
+        // Fetch event data
         const eventResponse = await fetch(
           `https://auth.zeenopay.com/events/`,
           {
@@ -69,7 +116,6 @@ const CandidateTable = () => {
           throw new Error("Event not found.");
         }
 
-        // Set payment_info
         setPaymentInfo(event.payment_info);
 
         // Fetch contestants data
@@ -89,7 +135,7 @@ const CandidateTable = () => {
 
         const contestants = await contestantsResponse.json();
 
-        // Fetch regular payment intents data
+        // Fetch regular payment intents
         const paymentsResponse = await fetch(
           `https://auth.zeenopay.com/payments/intents/?event_id=${event_id}`,
           {
@@ -106,7 +152,7 @@ const CandidateTable = () => {
 
         const paymentIntents = await paymentsResponse.json();
 
-        // Fetch QR/NQR payment intents data
+        // Fetch QR payment intents (excluding NQR)
         const qrPaymentsResponse = await fetch(
           `https://auth.zeenopay.com/payments/qr/intents?event_id=${event_id}`,
           {
@@ -118,45 +164,50 @@ const CandidateTable = () => {
         );
 
         if (!qrPaymentsResponse.ok) {
-          throw new Error("Failed to fetch QR/NQR payment intents data.");
+          throw new Error("Failed to fetch QR payment intents data.");
         }
 
         const qrPaymentIntents = await qrPaymentsResponse.json();
-
-        // Combine regular and QR/NQR payment intents
-        const allPaymentIntents = [...paymentIntents, ...qrPaymentIntents];
-
-        // Filter payment intents to include only those with status "S"
-        const filteredPaymentIntents = allPaymentIntents.filter(
-          (intent) => intent.status === "S"
+        const filteredQrPaymentIntents = qrPaymentIntents.filter(
+          (intent) => intent.processor?.toUpperCase() === "QR"
         );
 
-        // Calculate votes for each contestant using filtered payment intents
+        // Combine all payment sources
+        const allPaymentIntents = [
+          ...paymentIntents,
+          ...filteredQrPaymentIntents,
+          ...nqrTransactions.map(txn => ({
+            intent_id: getIntentIdFromNQR(txn.addenda1, txn.addenda2),
+            amount: txn.amount,
+            currency: 'NPR',
+            processor: 'NQR',
+            status: 'S'
+          }))
+        ];
+
+        // Filter successful transactions
+        const successfulPaymentIntents = allPaymentIntents.filter(
+          (intent) => intent.status === 'S'
+        );
+
+        // Calculate votes for each contestant
         const candidatesWithVotes = contestants.map((contestant) => {
           let totalVotes = 0;
 
-          // Find matching payment intents
-          filteredPaymentIntents.forEach((intent) => {
-            if (intent.intent_id.toString() === contestant.id.toString()) {
-              let currency = "USD";
+          successfulPaymentIntents.forEach((intent) => {
+            if (intent.intent_id?.toString() === contestant.id.toString()) {
+              let currency = 'USD';
               const processor = intent.processor?.toUpperCase();
 
-              // Determine the currency based on the processor
-              if (
-                ["ESEWA", "KHALTI", "FONEPAY", "PRABHUPAY", "NQR", "QR"].includes(
-                  processor
-                )
-              ) {
-                currency = "NPR";
+              if (["ESEWA", "KHALTI", "FONEPAY", "PRABHUPAY", "QR", "NQR"].includes(processor)) {
+                currency = 'NPR';
               } else if (["PHONEPE", "PAYU"].includes(processor)) {
-                currency = "INR";
+                currency = 'INR';
               } else if (processor === "STRIPE") {
-                currency = intent.currency?.toUpperCase() || "USD";
+                currency = intent.currency?.toUpperCase() || 'USD';
               }
 
-              // Use the imported utility function to calculate votes
-              const votes = calculateVotes(intent.amount, currency);
-              totalVotes += votes;
+              totalVotes += calculateVotes(intent.amount, currency);
             }
           });
 
@@ -403,6 +454,28 @@ const CandidateTable = () => {
             <FaSort style={{ fontSize: "14px" }} />
             {sortConfig.direction === "asc" ? "Ascending" : "Descending"}
           </button>
+
+          {/* Export Button */}
+          <button
+            onClick={handleExport}
+            title="Export"
+            className="icon-btn export-btn"
+            style={{
+              padding: "8px 12px",
+              borderRadius: "6px",
+              border: "1px solid #ced4da",
+              backgroundColor: "#028248",
+              color: "white",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              transition: "background-color 0.3s ease",
+            }}
+          >
+            <FaDownload style={{ fontSize: "14px" }} />
+            Export
+          </button>
         </div>
       </div>
 
@@ -455,7 +528,7 @@ const CandidateTable = () => {
                       {statusMapping[candidate.status] || "Unknown"}
                     </span>
                   </td>
-                  <td>{candidate.votes}</td>
+                  <td>{candidate.votes.toLocaleString()}</td>
                   <td>
                     <div className="action-icons">
                       <button

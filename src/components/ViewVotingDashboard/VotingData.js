@@ -13,14 +13,8 @@ const VotingData = () => {
     chart: {
       type: "line",
       toolbar: { show: false },
-      zoom: {
-        enabled: false,
-      },
-      events: {
-        mouseMove: (event, chartContext, config) => {
-          // Removed event.preventDefault() as it's unnecessary and causes an error
-        },
-      },
+      zoom: { enabled: false },
+      events: { mouseMove: (event, chartContext, config) => {} },
     },
     xaxis: {
       categories: ["12:00 am", "6:00 am", "12:00 pm", "6:00 pm"],
@@ -33,15 +27,9 @@ const VotingData = () => {
     },
     yaxis: {
       title: { text: "Votes" },
-      labels: {
-        style: {
-          fontWeight: "bold",
-        },
-      },
+      labels: { style: { fontWeight: "bold" } },
     },
-    stroke: {
-      curve: "smooth",
-    },
+    stroke: { curve: "smooth" },
     colors: ["rgb(133, 219, 80)"],
     fill: {
       type: "gradient",
@@ -55,163 +43,176 @@ const VotingData = () => {
     grid: { borderColor: "#ECEFF1" },
   });
 
-  const [series, setSeries] = useState([
-    {
-      name: "Votes",
-      data: [0, 0, 0, 0],
-    },
-  ]);
-
+  const [series, setSeries] = useState([{ name: "Votes", data: [0, 0, 0, 0] }]);
   const [currentDate, setCurrentDate] = useState("");
   const [isMobile, setIsMobile] = useState(false);
   const [paymentInfo, setPaymentInfo] = useState(0);
   const [error, setError] = useState(null);
+  const [nqrTransactions, setNqrTransactions] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  // Function to extract intent_id from NQR transaction
+  const getIntentIdFromNQR = (addenda1, addenda2) => {
+    try {
+      const combined = `${addenda1}-${addenda2}`;
+      const hexMatch = combined.match(/vnpr-([a-f0-9]+)/i);
+      return hexMatch?.[1] ? parseInt(hexMatch[1], 16) : null;
+    } catch (error) {
+      console.error('Error extracting intent_id from NQR:', error);
+      return null;
+    }
+  };
+
+  // Fetch NQR transactions
+  const fetchNQRTransactions = async () => {
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const response = await axios.post(
+        'https://auth.zeenopay.com/payments/qr/transactions/static',
+        { 'start_date': "2025-03-21", 'end_date': today },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          }
+        }
+      );
+
+      if (response.data?.transactions?.responseBody) {
+        return response.data.transactions.responseBody.filter(
+          txn => txn.debitStatus === '000'
+        );
+      }
+      return [];
+    } catch (error) {
+      console.error('Error fetching NQR transactions:', error);
+      return [];
+    }
+  };
 
   // Fetch event data to get payment_info
-  useEffect(() => {
-    const fetchEventData = async () => {
-      try {
-        const response = await axios.get(`https://auth.zeenopay.com/events/`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            Accept: "application/json",
-          },
-        });
+  const fetchEventData = async () => {
+    try {
+      const response = await axios.get(`https://auth.zeenopay.com/events/`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
 
-        const event = response.data.find((event) => event.id === parseInt(event_id));
-        if (event) {
-          setPaymentInfo(event.payment_info);
-        }
-      } catch (err) {
-        console.error("Error fetching event data:", err);
-        setError("Failed to fetch event data.");
-      }
-    };
-
-    fetchEventData();
-  }, [event_id, token]);
-
-  // Fetch payment intents and calculate votes
-  useEffect(() => {
-    const fetchPaymentIntents = async () => {
-      try {
-        // Fetch regular payment intents
-        const response = await axios.get(
-          `https://auth.zeenopay.com/payments/intents/?event_id=${event_id}`,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-              Accept: "application/json",
-            },
-          }
-        );
-
-        // Fetch QR/NQR payment intents
-        const qrResponse = await axios.get(
-          `https://auth.zeenopay.com/payments/qr/intents?event_id=${event_id}`,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-              Accept: "application/json",
-            },
-          }
-        );
-
-        // Combine both responses
-        const paymentIntents = [...response.data, ...qrResponse.data];
-
-        // Filter payment intents to include only successful transactions (status === 'S')
-        const successfulPaymentIntents = paymentIntents.filter(
-          (intent) => intent.status === 'S'
-        );
-
-        const timeIntervals = ["12:00 am", "6:00 am", "12:00 pm", "6:00 pm"];
-        const dailyVotes = {};
-
-        successfulPaymentIntents.forEach((intent) => {
-          let currency = "USD";
-          const processor = intent.processor?.toUpperCase();
-
-          // Determine the currency based on the processor
-          if (
-            ["ESEWA", "KHALTI", "FONEPAY", "PRABHUPAY", "NQR", "QR"].includes(
-              processor
-            )
-          ) {
-            currency = "NPR";
-          } else if (["PHONEPE", "PAYU"].includes(processor)) {
-            currency = "INR";
-          } else if (processor === "STRIPE") {
-            currency = intent.currency?.toUpperCase() || "USD";
-          }
-
-          // Use the imported utility function to calculate votes
-          const votes = calculateVotes(intent.amount, currency);
-
-          const updatedAt = new Date(intent.updated_at);
-          const dateKey = updatedAt.toISOString().split("T")[0];
-          const hours = updatedAt.getHours();
-
-          if (!dailyVotes[dateKey]) {
-            dailyVotes[dateKey] = [0, 0, 0, 0];
-          }
-
-          if (hours >= 0 && hours < 6) {
-            dailyVotes[dateKey][0] += votes;
-          } else if (hours >= 6 && hours < 12) {
-            dailyVotes[dateKey][1] += votes;
-          } else if (hours >= 12 && hours < 18) {
-            dailyVotes[dateKey][2] += votes;
-          } else {
-            dailyVotes[dateKey][3] += votes;
-          }
-        });
-
-        // Sort dates in descending order
-        const sortedDates = Object.keys(dailyVotes).sort((a, b) => new Date(b) - new Date(a));
-
-        const seriesData = sortedDates.map((date) => ({
-          name: date,
-          data: dailyVotes[date],
-        }));
-
-        setSeries(seriesData);
-      } catch (err) {
-        console.error("Error fetching payment intents:", err);
-        setError("Failed to fetch payment intents data.");
-      }
-    };
-
-    if (paymentInfo > 0) {
-      fetchPaymentIntents();
+      const event = response.data.find(e => e.id === parseInt(event_id));
+      if (event) setPaymentInfo(event.payment_info);
+      return event;
+    } catch (err) {
+      console.error("Error fetching event data:", err);
+      setError("Failed to fetch event data.");
+      return null;
     }
-  }, [event_id, token, paymentInfo]);
+  };
+
+  // Process all payment data and calculate votes by time intervals
+  const processVotingData = async () => {
+    setLoading(true);
+    try {
+      // Fetch all required data in parallel
+      const [eventData, nqrData] = await Promise.all([
+        fetchEventData(),
+        fetchNQRTransactions()
+      ]);
+
+      if (!eventData) return;
+
+      // Fetch regular and QR payment intents
+      const [regularPayments, qrPayments] = await Promise.all([
+        axios.get(`https://auth.zeenopay.com/payments/intents/?event_id=${event_id}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        }),
+        axios.get(`https://auth.zeenopay.com/payments/qr/intents?event_id=${event_id}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        })
+      ]);
+
+      // Filter QR payments to exclude NQR
+      const filteredQrPayments = qrPayments.data.filter(
+        intent => intent.processor?.toUpperCase() === "QR"
+      );
+
+      // Combine all payment sources
+      const allPayments = [
+        ...regularPayments.data,
+        ...filteredQrPayments,
+        ...nqrData.map(txn => ({
+          intent_id: getIntentIdFromNQR(txn.addenda1, txn.addenda2),
+          amount: txn.amount,
+          processor: 'NQR',
+          status: 'S',
+          currency: 'NPR',
+          updated_at: txn.localTransactionDateTime
+        }))
+      ];
+
+      // Process successful payments only
+      const successfulPayments = allPayments.filter(p => p.status === 'S');
+      setNqrTransactions(nqrData);
+
+      // Calculate votes by time intervals
+      const timeIntervals = ["12:00 am", "6:00 am", "12:00 pm", "6:00 pm"];
+      const dailyVotes = {};
+
+      successfulPayments.forEach(payment => {
+        const currency = 
+          ["ESEWA", "KHALTI", "FONEPAY", "PRABHUPAY", "NQR", "QR"].includes(payment.processor?.toUpperCase()) ? "NPR" :
+          ["PHONEPE", "PAYU"].includes(payment.processor?.toUpperCase()) ? "INR" :
+          payment.processor?.toUpperCase() === "STRIPE" ? (payment.currency?.toUpperCase() || "USD") : "USD";
+
+        const votes = calculateVotes(payment.amount, currency);
+        const updatedAt = new Date(payment.updated_at);
+        const dateKey = updatedAt.toISOString().split("T")[0];
+        const hours = updatedAt.getHours();
+
+        if (!dailyVotes[dateKey]) dailyVotes[dateKey] = [0, 0, 0, 0];
+
+        if (hours >= 0 && hours < 6) dailyVotes[dateKey][0] += votes;
+        else if (hours >= 6 && hours < 12) dailyVotes[dateKey][1] += votes;
+        else if (hours >= 12 && hours < 18) dailyVotes[dateKey][2] += votes;
+        else dailyVotes[dateKey][3] += votes;
+      });
+
+      // Sort dates and prepare chart data
+      const sortedDates = Object.keys(dailyVotes).sort((a, b) => new Date(b) - new Date(a));
+      const seriesData = sortedDates.map(date => ({ name: date, data: dailyVotes[date] }));
+
+      setSeries(seriesData.length ? seriesData : [{ name: "Votes", data: [0, 0, 0, 0] }]);
+    } catch (err) {
+      console.error("Error processing voting data:", err);
+      setError("Failed to process voting data.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Initial data load
+  useEffect(() => {
+    processVotingData();
+    
+    // Set up refresh interval (every 5 minutes)
+    const interval = setInterval(processVotingData, 300000);
+    return () => clearInterval(interval);
+  }, [event_id, token]);
 
   // Set current date and handle mobile view
   useEffect(() => {
-    const date = new Date();
-    const options = { year: "numeric", month: "long", day: "numeric" };
-    setCurrentDate(date.toLocaleDateString("en-US", options));
+    setCurrentDate(new Date().toLocaleDateString("en-US", { 
+      year: "numeric", month: "long", day: "numeric" 
+    }));
 
-    const handleResize = () => {
-      if (window.innerWidth <= 768) {
-        setIsMobile(true);
-      } else {
-        setIsMobile(false);
-      }
-    };
-
+    const handleResize = () => setIsMobile(window.innerWidth <= 768);
     handleResize();
-
     window.addEventListener("resize", handleResize);
-
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  // Check if there is any voting data available
-  const hasVotingData = series.some((s) => s.data.some((vote) => vote > 0));
+  if (error) return <p className="error-message">{error}</p>;
+  if (loading) return <p className="loading-message">Loading voting data...</p>;
 
-  if (error) return <p>{error}</p>;
+  const hasVotingData = series.some(s => s.data.some(vote => vote > 0));
 
   return (
     <div className="dashboard-container">
@@ -360,7 +361,6 @@ const VotingData = () => {
         )}
       </div>
 
-      {/* Pass event_id and token as props to CandidateList */}
       <CandidateList event_id={event_id} token={token} />
     </div>
   );

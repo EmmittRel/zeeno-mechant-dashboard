@@ -3,6 +3,7 @@ import { FaDownload } from 'react-icons/fa';
 import ReactCountryFlag from 'react-country-flag';
 import { useToken } from '../../context/TokenContext';
 import { calculateVotes } from '../AmountCalculator';
+import useNQRProcessor from '../useNQRProcessor';
 
 const RealtimeVoting = ({ id: event_id }) => {
   const { token } = useToken();
@@ -37,6 +38,17 @@ const RealtimeVoting = ({ id: event_id }) => {
     NPR: 'NP',
   };
 
+  // Status labels and colors
+  const statusLabel = {
+    P: { label: 'Pending', color: '#FFA500' },
+    S: { label: 'Success', color: '#28A745' },
+    F: { label: 'Failed', color: '#DC3545' },
+    C: { label: 'Cancelled', color: '#6C757D' },
+  };
+
+  // Use the NQR processor hook
+  const { nqrData: nqrTransactions, loading: nqrLoading } = useNQRProcessor(token, event_id, contestants);
+
   // Function to format date
   const formatDate = (dateString) => {
     const date = new Date(dateString);
@@ -59,59 +71,6 @@ const RealtimeVoting = ({ id: event_id }) => {
     };
 
     return `${day}${ordinalSuffix(day)} ${month} ${year}, ${formattedHours}:${minutes} ${period}`;
-  };
-
-  // Status labels and colors
-  const statusLabel = {
-    P: { label: 'Pending', color: '#FFA500' },
-    S: { label: 'Success', color: '#28A745' },
-    F: { label: 'Failed', color: '#DC3545' },
-    C: { label: 'Cancelled', color: '#6C757D' },
-  };
-
-  // Function to extract intent_id from NQR transaction
-  const getIntentIdFromNQR = (addenda1, addenda2) => {
-    try {
-      const combined = `${addenda1}-${addenda2}`;
-      const hexMatch = combined.match(/vnpr-([a-f0-9]+)/i);
-      if (hexMatch && hexMatch[1]) {
-        return parseInt(hexMatch[1], 16);
-      }
-      return null;
-    } catch (error) {
-      console.error('Error extracting intent_id from NQR:', error);
-      return null;
-    }
-  };
-
-  // Fetch NQR transactions
-  const fetchNQRTransactions = async () => {
-    try {
-      const today = new Date().toISOString().split('T')[0];
-      
-      const response = await fetch('https://auth.zeenopay.com/payments/qr/transactions/static', {
-        method: 'POST',
-        headers: {
-          'accept': 'application/json',
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          'start_date': "2025-03-21",
-          'end_date': today
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch NQR data');
-      }
-
-      const result = await response.json();
-      return result.transactions?.responseBody || [];
-    } catch (error) {
-      console.error('Error fetching NQR transactions:', error);
-      return [];
-    }
   };
 
   // Fetch event data
@@ -193,9 +152,6 @@ const RealtimeVoting = ({ id: event_id }) => {
         }
         const qrPayments = await qrResponse.json();
 
-        // 3. Fetch NQR payments (NepalPay QR)
-        const nqrTransactions = await fetchNQRTransactions();
-
         // Process regular payments (non-QR)
         const processedRegularData = regularPayments
           .filter((item) => item.event_id == event_id && item.status === 'S')
@@ -273,32 +229,13 @@ const RealtimeVoting = ({ id: event_id }) => {
             };
           });
 
-        // Process NQR payments (NepalPay QR)
-        const processedNQRData = nqrTransactions
-          .filter(txn => txn.debitStatus === '000') 
-          .map(txn => {
-            const intentId = getIntentIdFromNQR(txn.addenda1, txn.addenda2);
-            const contestant = contestants.find(c => c.id === intentId);
-            const contestantName = contestant ? contestant.name : 'Unknown';
-            
-            return {
-              name: txn.payerName,
-              email: 'N/A',
-              phone: txn.payerMobileNumber,
-              createdAt: txn.localTransactionDateTime,
-              formattedCreatedAt: formatDate(txn.localTransactionDateTime),
-              amount: txn.amount,
-              status: { label: 'Success', color: '#28A745' },
-              paymentType: 'NepalPayQR',
-              votes: calculateVotes(txn.amount, 'NPR'),
-              currency: 'NPR',
-              contestantName: contestantName,
-            };
-          });
-
         // Combine all data, filter out 0 votes, and sort by date
-        const combinedData = [...processedRegularData, ...processedQRData, ...processedNQRData]
-          .filter(item => item.votes > 0) // Filter out entries with 0 votes
+        const combinedData = [
+          ...processedRegularData, 
+          ...processedQRData, 
+          ...nqrTransactions
+        ]
+          .filter(item => item.votes > 0)
           .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
         setData(combinedData);
@@ -310,7 +247,7 @@ const RealtimeVoting = ({ id: event_id }) => {
     };
 
     fetchAllData();
-  }, [token, event_id, eventData, contestants]);
+  }, [token, event_id, eventData, contestants, nqrTransactions]);
 
   // Handle CSV export
   const handleExport = () => {
@@ -373,7 +310,7 @@ const RealtimeVoting = ({ id: event_id }) => {
         </div>
       </div>
 
-      {loading && (
+      {(loading || nqrLoading) && (
         <div className="loading-indicator">
           Loading data...
         </div>
@@ -426,7 +363,7 @@ const RealtimeVoting = ({ id: event_id }) => {
             ) : (
               <tr>
                 <td colSpan="8" style={{ textAlign: 'center' }}>
-                  {loading ? 'Loading data...' : 'No voting data available for this event.'}
+                  {loading || nqrLoading ? 'Loading data...' : 'No voting data available for this event.'}
                 </td>
               </tr>
             )}
