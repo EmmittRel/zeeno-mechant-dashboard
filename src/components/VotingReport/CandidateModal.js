@@ -1,19 +1,12 @@
 import React, { useState, useEffect } from "react";
+import "../../assets/modal.css";
 import { useToken } from "../../context/TokenContext";
 import * as XLSX from "xlsx";
-import { FaDownload } from "react-icons/fa";
+import { FaEdit } from "react-icons/fa";
 import useS3Upload from "../../hooks/useS3Upload";
 import { calculateVotes } from '../AmountCalculator';
 
-const CandidateModel = ({ 
-  visible, 
-  onClose, 
-  title, 
-  candidate, 
-  isEditMode, 
-  onUpdate 
-}) => {
-  // State management
+const CandidateModel = ({ visible, onClose, title, candidate, isEditMode, onUpdate }) => {
   const [formData, setFormData] = useState(candidate || {});
   const [voterDetails, setVoterDetails] = useState([]);
   const { token } = useToken();
@@ -21,16 +14,10 @@ const CandidateModel = ({
   const [voterError, setVoterError] = useState(null);
   const [selectedFile, setSelectedFile] = useState(null);
   const [uploadProgress, setUploadProgress] = useState(0);
-  const [nqrTransactions, setNqrTransactions] = useState([]);
 
-  // Payment processor constants
-  const nepalProcessors = ["ESEWA", "KHALTI", "FONEPAY", "PRABHUPAY", "NQR", "QR"];
-  const indiaProcessors = ["PHONEPE"];
-  const internationalProcessors = ["PAYU", "STRIPE"];
-
+  // Call the hook at the top level
   const { uploadFile } = useS3Upload();
 
-  // Initialize form data and fetch voter details when candidate changes
   useEffect(() => {
     setFormData(candidate || {});
     if (candidate && candidate.id) {
@@ -38,67 +25,23 @@ const CandidateModel = ({
     }
   }, [candidate]);
 
-  // Helper function to extract intent_id from NQR transaction
-  const getIntentIdFromNQR = (addenda1, addenda2) => {
-    try {
-      const combined = `${addenda1}-${addenda2}`;
-      const hexMatch = combined.match(/vnpr-([a-f0-9]+)/i);
-      return hexMatch?.[1] ? parseInt(hexMatch[1], 16) : null;
-    } catch (error) {
-      console.error('Error extracting intent_id from NQR:', error);
-      return null;
-    }
-  };
-
-  // Fetch NQR transactions from API
-  const fetchNQRTransactions = async () => {
-    try {
-      const today = new Date().toISOString().split('T')[0];
-      
-      const response = await fetch(
-        'https://auth.zeenopay.com/payments/qr/transactions/static', 
-        {
-          method: 'POST',
-          headers: {
-            'accept': 'application/json',
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            'start_date': "2025-03-21",
-            'end_date': today
-          })
-        }
-      );
-
-      if (!response.ok) throw new Error('Failed to fetch NQR data');
-      
-      const result = await response.json();
-      return result.transactions?.responseBody?.filter(
-        txn => txn.debitStatus === '000'
-      ) || [];
-    } catch (error) {
-      console.error('Error fetching NQR transactions:', error);
-      return [];
-    }
-  };
-
-  // Handle image upload for candidate avatar
+  // Handle image upload
   const handleImageUpload = (e) => {
     const file = e.target.files[0];
     if (file) {
-      setSelectedFile(file);
+      setSelectedFile(file); // Set the selected file
       const reader = new FileReader();
       reader.onloadend = () => {
-        setFormData(prev => ({ ...prev, avatar: reader.result }));
+        setFormData((prevData) => ({ ...prevData, avatar: reader.result }));
       };
       reader.readAsDataURL(file);
     }
   };
 
-  // Form submission handler
+  // Handle form submission
   const handleSubmit = async (e) => {
     e.preventDefault();
+
     try {
       let imgUrl = formData.avatar;
 
@@ -116,63 +59,130 @@ const CandidateModel = ({
         });
       }
 
-      onUpdate({ ...formData, avatar: imgUrl });
+      // Update the form data with the new image URL
+      const updatedFormData = {
+        ...formData,
+        avatar: imgUrl,
+      };
+
+      // Call the onUpdate function with the updated form data
+      onUpdate(updatedFormData);
     } catch (err) {
       console.error("Error uploading image:", err);
     }
   };
 
-  // Fetch and process voter details
-  const fetchVoterDetails = async (contestantId) => {
+  // Fetch voter details and calculate votes
+  const fetchVoterDetails = async (miscKv) => {
     setIsLoadingVoters(true);
     setVoterError(null);
 
     try {
-      // Fetch all payment sources in parallel
-      const [nqrTxns, regularIntents, qrIntents] = await Promise.all([
-        fetchNQRTransactions(),
-        fetchRegularPaymentIntents(),
-        fetchQRPaymentIntents()
-      ]);
-
-      setNqrTransactions(nqrTxns);
-
-      // Process all payment intents
-      const allIntents = [
-        ...regularIntents,
-        ...qrIntents.filter(intent => intent.processor?.toUpperCase() === "QR"),
-        ...nqrTxns.map(txn => ({
-          intent_id: getIntentIdFromNQR(txn.addenda1, txn.addenda2),
-          amount: txn.amount,
-          currency: 'NPR',
-          processor: 'NQR',
-          status: 'S',
-          name: txn.payerName,
-          phone_no: txn.payerMobileNumber,
-          updated_at: txn.localTransactionDateTime,
-          intent: 'V'
-        }))
-      ];
-
-      // Filter successful transactions for this contestant
-      const matchedIntents = allIntents.filter(
-        intent => intent.status === 'S' && 
-                 String(intent.intent_id) === String(contestantId) && 
-                 intent.intent === 'V'
+      // Fetch regular payment intents
+      const paymentsResponse = await fetch(
+        `https://auth.zeenopay.com/payments/intents/`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
       );
 
-      // Transform into voter details
-      const voters = matchedIntents.map(intent => ({
-        name: intent.name || "Anonymous",
-        phone_no: intent.phone_no || "N/A",
-        processor: getPaymentMethod(intent.processor),
-        votes: calculateVotes(intent.amount, getCurrency(intent.processor)),
-        transactionTime: intent.updated_at
-      }));
+      if (!paymentsResponse.ok) {
+        throw new Error("Failed to fetch payment intents data.");
+      }
 
-      // Sort by most recent
-      voters.sort((a, b) => new Date(b.transactionTime) - new Date(a.transactionTime));
-      setVoterDetails(voters);
+      const paymentIntents = await paymentsResponse.json();
+
+      // Fetch QR/NQR payment intents
+      const qrPaymentsResponse = await fetch(
+        `https://auth.zeenopay.com/payments/qr/intents`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      if (!qrPaymentsResponse.ok) {
+        throw new Error("Failed to fetch QR/NQR payment intents data.");
+      }
+
+      const qrPaymentIntents = await qrPaymentsResponse.json();
+
+      // Combine regular and QR/NQR payment intents
+      const allPaymentIntents = [...paymentIntents, ...qrPaymentIntents];
+
+      // Filter payment intents to include only successful transactions (status === 'S')
+      const successfulPaymentIntents = allPaymentIntents.filter(
+        (intent) => intent.status === "S"
+      );
+
+      // Fetch events data
+      const eventsResponse = await fetch(
+        `https://auth.zeenopay.com/events/`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      if (!eventsResponse.ok) {
+        throw new Error("Failed to fetch events data.");
+      }
+
+      const events = await eventsResponse.json();
+
+      // Match intents with the candidate's misc_kv and intent type "V"
+      const matchedIntents = successfulPaymentIntents.filter(
+        (intent) => String(intent.intent_id) === String(miscKv) && intent.intent === "V"
+      );
+
+      // Calculate votes and prepare voter list
+      const voterList = matchedIntents.map((intent) => {
+        let currency = "USD";
+        const processor = intent.processor?.toUpperCase();
+
+        // Determine the currency based on the processor
+        if (
+          ["ESEWA", "KHALTI", "FONEPAY", "PRABHUPAY", "NQR", "QR"].includes(
+            processor
+          )
+        ) {
+          currency = "NPR";
+        } else if (["PHONEPE", "PAYU"].includes(processor)) {
+          currency = "INR";
+        } else if (processor === "STRIPE") {
+          currency = intent.currency?.toUpperCase() || "USD";
+        }
+
+        // Use the imported utility function to calculate votes
+        const votes = calculateVotes(intent.amount, currency);
+
+        // Determine payment method
+        let paymentMethod;
+        if (processor === "NQR") {
+          paymentMethod = "NepalPayQR";
+        } else if (processor === "QR") {
+          paymentMethod = "FonePayQR";
+        } else if (processor === "FONEPAY") {
+          paymentMethod = "iMobile Banking";
+        } else if (processor === "PHONEPE") {
+          paymentMethod = "India";
+        } else if (["PAYU", "STRIPE"].includes(processor)) {
+          paymentMethod = "International";
+        } else {
+          paymentMethod = processor || "N/A";
+        }
+
+        return {
+          name: intent.name,
+          phone_no: intent.phone_no,
+          processor: paymentMethod,
+          votes: votes,
+          transactionTime: intent.updated_at,
+        };
+      });
+
+      // Sort voter list by transaction time (newest first)
+      voterList.sort((a, b) => new Date(b.transactionTime) - new Date(a.transactionTime));
+
+      setVoterDetails(voterList);
     } catch (error) {
       setVoterError(error.message);
     } finally {
@@ -180,50 +190,35 @@ const CandidateModel = ({
     }
   };
 
-  // Helper function to get payment method display name
-  const getPaymentMethod = (processor) => {
-    const proc = processor?.toUpperCase();
-    switch (proc) {
-      case "NQR": return "NepalPayQR";
-      case "QR": return "FonePayQR";
-      case "FONEPAY": return "iMobile Banking";
-      case "PHONEPE": return "India";
-      case "PAYU": 
-      case "STRIPE": return "International";
-      default: return processor || "N/A";
-    }
-  };
+  const totalVotes = voterDetails.reduce((sum, voter) => sum + voter.votes, 0);
 
-  // Helper function to determine currency
-  const getCurrency = (processor) => {
-    const proc = processor?.toUpperCase();
-    if (["ESEWA", "KHALTI", "FONEPAY", "PRABHUPAY", "QR", "NQR"].includes(proc)) {
-      return "NPR";
-    } else if (["PHONEPE", "PAYU"].includes(proc)) {
-      return "INR";
-    } else if (proc === "STRIPE") {
-      return "USD"; // Actual currency will come from intent.currency
-    }
-    return "USD";
-  };
-
-  // Helper function to get color for payment method
+  // Function to get processor color
   const getProcessorColor = (processor) => {
     switch (processor.toUpperCase()) {
-      case "ESEWA": return "green";
-      case "PRABHUPAY": return "red";
-      case "KHALTI": return "#200a69";
-      case "FONEPAY": return "red";
-      case "NEPALPAYQR": return "skyblue";
-      case "iMobileBanking": return "blue";
-      case "STRIPE": return "#5433ff";
-      case "PHONEPE": return "#5F259F";
-      case "PAYU": return "#FF5722";
-      default: return "black";
+      case "ESEWA":
+        return "green";
+      case "PRABHUPAY":
+        return "red";
+      case "KHALTI":
+        return "#200a69";
+      case "FONEPAY":
+        return "red";
+      case "NEPALPAYQR":
+        return "skyblue";
+      case "iMobileBanking":
+        return "blue";
+      case "STRIPE":
+        return "#5433ff";
+      case "PHONEPE":
+        return "#5F259F";
+      case "PAYU":
+        return "#FF5722";
+      default:
+        return "black";
     }
   };
 
-  // Format transaction time for display
+  // Function to format transaction time
   const formatTransactionTime = (dateString) => {
     const date = new Date(dateString);
     const options = {
@@ -234,63 +229,40 @@ const CandidateModel = ({
       minute: "2-digit",
       hour12: true,
     };
-    const formatted = new Intl.DateTimeFormat("en-US", options).format(date);
+    const formattedDate = new Intl.DateTimeFormat("en-US", options).format(date);
     const day = date.getDate();
-    const suffix = 
-      day % 10 === 1 && day !== 11 ? 'st' :
-      day % 10 === 2 && day !== 12 ? 'nd' :
-      day % 10 === 3 && day !== 13 ? 'rd' : 'th';
-    return formatted.replace(/\d+/, `${day}${suffix}`);
+    const ordinalSuffix =
+      day === 1 ? "st" : day === 2 ? "nd" : day === 3 ? "rd" : "th";
+    return formattedDate.replace(/\d+/, `${day}${ordinalSuffix}`);
   };
 
-  // Export voter details to Excel
+  // Function to export voting details to Excel
   const exportToExcel = () => {
-    const data = voterDetails.map(voter => ({
+    const dataForExport = voterDetails.map((voter) => ({
       "Full Name": voter.name,
       "Payment Method": voter.processor,
-      "Votes": voter.votes,
+      Votes: voter.votes,
       "Phone No": voter.phone_no,
-      "Transaction Time": formatTransactionTime(voter.transactionTime)
+      "Transaction Time": formatTransactionTime(voter.transactionTime),
     }));
 
     const workbook = XLSX.utils.book_new();
-    const worksheet = XLSX.utils.json_to_sheet(data);
+    const worksheet = XLSX.utils.json_to_sheet(dataForExport);
     XLSX.utils.book_append_sheet(workbook, worksheet, "Voting Details");
     XLSX.writeFile(workbook, "voting_details.xlsx");
   };
-
-  // Fetch regular payment intents
-  const fetchRegularPaymentIntents = async () => {
-    const response = await fetch(
-      `https://auth.zeenopay.com/payments/intents/`,
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
-    if (!response.ok) throw new Error("Failed to fetch payment intents");
-    return await response.json();
-  };
-
-  // Fetch QR payment intents (excluding NQR)
-  const fetchQRPaymentIntents = async () => {
-    const response = await fetch(
-      `https://auth.zeenopay.com/payments/qr/intents`,
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
-    if (!response.ok) throw new Error("Failed to fetch QR payment intents");
-    return await response.json();
-  };
-
-  // Calculate total votes
-  const totalVotes = voterDetails.reduce((sum, voter) => sum + voter.votes, 0);
 
   if (!visible) return null;
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    setFormData((prevData) => ({ ...prevData, [name]: value }));
   };
 
   const handleOverlayClick = (e) => {
-    if (e.target === e.currentTarget) onClose();
+    if (e.target === e.currentTarget) {
+      onClose();
+    }
   };
 
   const handleModalContainerClick = (e) => {
@@ -303,16 +275,14 @@ const CandidateModel = ({
         <button className="modal-close-btn" onClick={onClose}>
           &times;
         </button>
-        
         <h2 className="modal-title">{title}</h2>
 
         {isEditMode ? (
           <form onSubmit={handleSubmit} className="edit-form">
-            {/* Edit form fields would go here */}
+            {/* Form fields for editing */}
           </form>
         ) : (
           <div className="modal-content">
-            {/* Candidate Information Section */}
             <div className="candidate-info">
               <div className="candidate-avatar">
                 <img
@@ -322,32 +292,58 @@ const CandidateModel = ({
                 />
               </div>
               <div className="candidate-details">
-                <p><strong>Name:</strong> {candidate.name}</p>
-                <p><strong>Contestant ID:</strong> {candidate.id}</p>
+                <p>
+                  <strong>Name:</strong> {candidate.name}
+                </p>
+                <p>
+                  <strong>Contestant ID:</strong> {candidate.id}
+                </p>
                 <p>
                   <strong>Status:</strong>{" "}
-                  <span className={`status-badge ${
-                    candidate.status === "O" ? "status-ongoing" :
-                    candidate.status === "E" ? "status-eliminated" :
-                    candidate.status === "H" ? "status-hidden" :
-                    candidate.status === "C" ? "status-closed" : ""
-                  }`}>
-                    {candidate.status === "O" ? "Ongoing" :
-                     candidate.status === "E" ? "Eliminated" :
-                     candidate.status === "H" ? "Hidden" :
-                     candidate.status === "C" ? "Closed" : "Unknown"}
+                  <span
+                    className={`status-badge 
+                      ${candidate.status === "O" ? "status-ongoing" :
+                      candidate.status === "E" ? "status-eliminated" :
+                      candidate.status === "H" ? "status-hidden" :
+                      candidate.status === "C" ? "status-closed" : ""}`}
+                  >
+                    {candidate.status === "O"
+                      ? "Ongoing"
+                      : candidate.status === "E"
+                      ? "Eliminated"
+                      : candidate.status === "H"
+                      ? "Hidden"
+                      : candidate.status === "C"
+                      ? "Closed"
+                      : "Unknown"}
                   </span>
                 </p>
-                <p><strong>Total Votes:</strong> {totalVotes.toLocaleString()} Votes</p>
-                <p><strong>Bio:</strong> {candidate.bio || "Not provided"}</p>
+                <p>
+                  <strong>Total Votes:</strong> {totalVotes} Votes
+                </p>
+                <p>
+                  <strong>Bio:</strong> {candidate.bio || "Not provided"}
+                </p>
               </div>
             </div>
 
             {/* Voting Information Section */}
             <div className="voting-info-header">
               <h3 className="modal-section-title">Voting Information</h3>
-              <button onClick={exportToExcel} className="export-btn">
-                <FaDownload /> Export to Excel
+              <button
+                onClick={exportToExcel}
+                className="export-btn"
+                style={{
+                  background: "#028248",
+                  color: "#fff",
+                  border: "none",
+                  padding: "6px 10px",
+                  borderRadius: "4px",
+                  cursor: "pointer",
+                  fontSize: "14px",
+                }}
+              >
+                Export to Excel
               </button>
             </div>
 
@@ -378,10 +374,12 @@ const CandidateModel = ({
                           <tr key={index}>
                             <td>{voter.name}</td>
                             <td>
-                              <span style={{
-                                fontWeight: "bold",
-                                color: getProcessorColor(voter.processor)
-                              }}>
+                              <span
+                                style={{
+                                  fontWeight: "bold",
+                                  color: getProcessorColor(voter.processor),
+                                }}
+                              >
                                 {voter.processor}
                               </span>
                             </td>
