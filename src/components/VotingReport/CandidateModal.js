@@ -437,361 +437,321 @@ const CandidateModel = ({
       </div>
 
       <style>{`
-        /* Import Poppins font from Google Fonts */
-        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap');
+  /* Import Poppins font from Google Fonts */
+  @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap');
 
-        /* Modal Overlay */
-        .modal-overlay {
-          position: fixed;
-          top: 0;
-          left: 0;
-          width: 100%;
-          height: 100%;
-          background: rgba(0, 0, 0, 0.5);
-          display: flex;
-          justify-content: center;
-          align-items: center;
-          z-index: 1000;
-          animation: fadeIn 0.3s ease;
-          font-family: 'Poppins', sans-serif;
-          padding: 16px;
-          box-sizing: border-box;
-        }
+  /* Modal Overlay */
+  .modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+    animation: fadeIn 0.3s ease;
+    font-family: 'Poppins', sans-serif;
+    padding: 16px;
+    box-sizing: border-box;
+  }
 
-        /* Modal Container */
-        .modal-container {
-          background: #fff;
-          border-radius: 8px;
-          width: calc(100% - 32px);
-          max-width: 600px;
-          max-height: 90vh;
-          padding: 20px;
-          position: relative;
-          box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-          animation: slideIn 0.3s ease;
-          overflow-y: auto;
-          font-family: 'Poppins', sans-serif;
-          box-sizing: border-box;
-        }
+  /* Modal Container */
+  .modal-container {
+    background: #fff;
+    border-radius: 8px;
+    width: calc(100% - 32px);
+    max-width: 600px;
+    max-height: 90vh;
+    padding: 20px;
+    position: relative;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    animation: slideIn 0.3s ease;
+    overflow-y: auto;
+    font-family: 'Poppins', sans-serif;
+    box-sizing: border-box;
+  }
 
-        /* Close Button */
-        .modal-close-btn {
-          position: absolute;
-          top: 10px;
-          right: 10px;
-          background: none;
-          border: none;
-          font-size: 1.5rem;
-          color: #333;
-          cursor: pointer;
-          transition: color 0.2s ease;
-        }
+  /* Close Button */
+  .modal-close-btn {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    color: #333;
+    cursor: pointer;
+    transition: color 0.2s ease;
+  }
 
-        .modal-close-btn:hover {
-          color: #e74c3c;
-        }
+  .modal-close-btn:hover {
+    color: #e74c3c;
+  }
 
-        /* Modal Title */
-        .modal-title {
-          margin-top: 0;
-          font-size: 1.5rem;
-          color: #333;
-          text-align: center;
-        }
+  /* Modal Title */
+  .modal-title {
+    margin-top: 0;
+    font-size: 1.5rem;
+    color: #333;
+    text-align: center;
+  }
 
-        /* Candidate Avatar Styling */
-        .candidate-avatar {
-          position: relative;
-          width: 120px;
-          height: 120px;
-          border-radius: 15px;
-          overflow: hidden;
-          box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
-          border: 3px solid #fff;
-          margin: 0 auto 20px;
-        }
+  /* Candidate Avatar Styling */
+  .candidate-avatar {
+    position: relative;
+    width: 120px;
+    height: 120px;
+    border-radius: 15px;
+    overflow: hidden;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    border: 3px solid #fff;
+    margin: 0 auto 20px;
+  }
 
-        .candidate-avatar-edit {
-          position: relative;
-          width: 120px;
-          height: 120px;
-          border-radius: 15px;
-          overflow: hidden;
-          box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
-          border: 3px solid #fff;
-          margin: 0 0 20px;
-        }
+  .candidate-avatar-edit {
+    position: relative;
+    width: 120px;
+    height: 120px;
+    border-radius: 15px;
+    overflow: hidden;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    border: 3px solid #fff;
+    margin: 0 0 20px;
+  }
 
-        .candidate-photo {
-          width: 100%;
-          height: 100%;
-          object-fit: cover;
-          display: block;
-          transition: transform 0.3s ease;
-        }
+  .candidate-photo {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    transition: transform 0.3s ease;
+  }
 
-        .candidate-avatar:hover .candidate-photo {
-          transform: scale(1.1);
-        }
+  .candidate-avatar:hover .candidate-photo {
+    transform: scale(1.1);
+  }
 
-        .edit-avatar-overlay {
-          position: absolute;
-          top: 0;
-          left: 0;
-          width: 100%;
-          height: 100%;
-          background-color: rgba(0, 0, 0, 0.5);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          opacity: 0;
-          transition: opacity 0.3s ease;
-        }
+  .edit-avatar-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+  }
 
-        .candidate-avatar:hover .edit-avatar-overlay {
-          opacity: 1;
-        }
+  .candidate-avatar:hover .edit-avatar-overlay {
+    opacity: 1;
+  }
 
-        .edit-avatar-icon {
-          color: #fff;
-          font-size: 24px;
-          cursor: pointer;
-        }
+  .edit-avatar-icon {
+    color: #fff;
+    font-size: 24px;
+    cursor: pointer;
+  }
 
-        /* Candidate Details */
-        .candidate-details {
-          text-align: center;
-        }
+  /* Candidate Details */
+  .candidate-details {
+    text-align: center;
+  }
 
-        .candidate-details p {
-          margin: 10px 0;
-        }
+  .candidate-details p {
+    margin: 10px 0;
+  }
 
-        /* Voting Information Header */
-        .voting-info-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin: 20px 0 10px;
-        }
+  /* Voting Information Header */
+  .voting-info-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
 
-        .modal-section-title {
-          margin: 0;
-          font-size: 1.2rem;
-        }
+  /* Table Wrapper */
+  .table-wrapper {
+    max-height: 200px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+  }
 
-        /* Table Wrapper */
-        .table-wrapper {
-          max-height: 300px;
-          border: 1px solid #ddd;
-          border-radius: 8px;
-          overflow: hidden;
-        }
+  /* Table Header Wrapper */
+  .table-header-wrapper {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background-color: #028248;
+  }
 
-        /* Table Header Wrapper */
-        .table-header-wrapper {
-          position: sticky;
-          top: 0;
-          z-index: 2;
-        }
 
-        .table-body-wrapper {
-          max-height: 250px;
-          overflow-y: auto;
-        }
+  /* Submit Button */
+  .submit-btn {
+    background: #028248;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    transition: background 0.3s ease;
+    margin-top: 10px;
+  }
 
-        /* Voters Table */
-        .voters-table {
-          width: 100%;
-          border-collapse: collapse;
-          font-size: 14px;
-        }
+  .submit-btn:hover {
+    background: rgb(59, 177, 124);
+  }
 
-        .voters-table th {
-          background-color: #028248;
-          color: white;
-          padding: 10px;
-          text-align: left;
-          position: sticky;
-          top: 0;
-        }
+  /* Export Button */
+  .export-btn {
+    background: #028248;
+    color: #fff;
+    border: "none",
+    padding: "6px 10px",
+    borderRadius: "4px",
+    cursor: "pointer",
+    fontSize: "14px",
+  }
 
-        .voters-table td {
-          padding: 10px;
-          border-bottom: 1px solid #eee;
-        }
+  .export-btn:hover {
+    background: #016138;
+  }
 
-        .voters-table tr:last-child td {
-          border-bottom: none;
-        }
+  /* Status Badges */
+  .status-badge {
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: bold;
+  }
 
-        .voters-table tr:hover {
-          background-color: #f5f5f5;
-        }
+  .status-ongoing {
+    background-color: #28a745;
+    color: #fff;
+  }
 
-        /* Form Styles */
-        .edit-form {
-          display: flex;
-          flex-direction: column;
-          gap: 15px;
-        }
+  .status-eliminated {
+    background-color: #dc3545;
+    color: #fff;
+  }
 
-        .form-group {
-          display: flex;
-          flex-direction: column;
-          gap: 5px;
-        }
+  .status-hidden {
+    background-color: #6c757d;
+    color: #fff;
+  }
 
-        .form-group label {
-          font-weight: 500;
-        }
+  .status-closed {
+    background-color: #ffc107;
+    color: #000;
+  }
 
-        .form-group input,
-        .form-group textarea,
-        .form-group select {
-          padding: 8px 12px;
-          border: 1px solid #ddd;
-          border-radius: 4px;
-          font-family: 'Poppins', sans-serif;
-        }
+  /* Animations */
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
 
-        .form-group textarea {
-          min-height: 80px;
-          resize: vertical;
-        }
+  @keyframes slideIn {
+    from {
+      transform: translateY(-20px);
+    }
+    to {
+      transform: translateY(0);
+    }
+  }
 
-        /* Buttons */
-        .save-btn {
-          background-color: #028248;
-          color: white;
-          border: none;
-          padding: 10px 15px;
-          border-radius: 4px;
-          cursor: pointer;
-          font-weight: 500;
-          transition: background-color 0.2s ease;
-          align-self: flex-start;
-        }
+  /* Custom Dropdown Styling */
+  .custom-dropdown {
+    position: relative;
+    width: 100%;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    background-color: #fff;
+    overflow: hidden;
+    transition: border-color 0.3s ease;
+  }
 
-        .save-btn:hover {
-          background-color: #016138;
-        }
+  .custom-dropdown:hover {
+    border-color: #5433ff;
+  }
 
-        .export-btn {
-          background-color: #028248;
-          color: white;
-          border: none;
-          padding: 6px 12px;
-          border-radius: 4px;
-          cursor: pointer;
-          font-size: 14px;
-          transition: background-color 0.2s ease;
-        }
+  .custom-dropdown select {
+    width: 100%;
+    padding: 10px 12px;
+    font-size: 14px;
+    border: none;
+    outline: none;
+    background-color: transparent;
+    appearance: none;
+    cursor: pointer;
+  }
 
-        .export-btn:hover {
-          background-color: #016138;
-        }
+  .custom-dropdown .dropdown-arrow {
+    position: absolute;
+    top: 50%;
+    right: 12px;
+    transform: translateY(-50%);
+    pointer-events: none;
+    color: #5433ff;
+    font-size: 12px;
+  }
 
-        /* Upload Progress */
-        .upload-progress {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          margin-top: 5px;
-        }
+  /* Styling for options */
+  .custom-dropdown select option {
+    padding: 10px;
+    background-color: #fff;
+    color: #333;
+  }
 
-        .upload-progress progress {
-          width: 100%;
-        }
+  .custom-dropdown select option:hover {
+    background-color: #f0f0f0;
+  }
 
-        /* Status Badges */
-        .status-badge {
-          padding: 4px 8px;
-          border-radius: 4px;
-          font-size: 12px;
-          font-weight: bold;
-        }
+  /* Media Queries for Mobile Responsiveness */
+  @media (max-width: 768px) {
+    .modal-container {
+      width: calc(100% - 32px);
+      max-height: 60vh;
+      padding: 16px;
+    }
 
-        .status-ongoing {
-          background-color: #28a745;
-          color: #fff;
-        }
+    .modal-title {
+      font-size: 1.2rem;
+    }
 
-        .status-eliminated {
-          background-color: #dc3545;
-          color: #fff;
-        }
+    .candidate-avatar,
+    .candidate-avatar-edit {
+      width: 100px;
+      height: 100px;
+    }
 
-        .status-hidden {
-          background-color: #6c757d;
-          color: #fff;
-        }
+    .candidate-details p {
+      font-size: 14px;
+    }
 
-        .status-closed {
-          background-color: #ffc107;
-          color: #000;
-        }
+    .voters-table th,
+    .voters-table td {
+      font-size: 12px;
+    }
 
-        /* Error Message */
-        .error-message {
-          color: #dc3545;
-          text-align: center;
-        }
-
-        /* Animations */
-        @keyframes fadeIn {
-          from {
-            opacity: 0;
-          }
-          to {
-            opacity: 1;
-          }
-        }
-
-        @keyframes slideIn {
-          from {
-            transform: translateY(-20px);
-          }
-          to {
-            transform: translateY(0);
-          }
-        }
-
-        /* Media Queries for Mobile Responsiveness */
-        @media (max-width: 768px) {
-          .modal-container {
-            width: calc(100% - 32px);
-            max-height: 80vh;
-            padding: 16px;
-          }
-
-          .modal-title {
-            font-size: 1.2rem;
-          }
-
-          .candidate-avatar,
-          .candidate-avatar-edit {
-            width: 100px;
-            height: 100px;
-          }
-
-          .candidate-details p {
-            font-size: 14px;
-          }
-
-          .voters-table th,
-          .voters-table td {
-            font-size: 12px;
-            padding: 8px;
-          }
-
-          .save-btn,
-          .export-btn {
-            padding: 8px 12px;
-            font-size: 14px;
-          }
-        }
-      `}</style>
+    .submit-btn,
+    .export-btn {
+      padding: 8px 16px;
+      font-size: 12px;
+    }
+  }
+`}</style>
     </div>
   );
 };
