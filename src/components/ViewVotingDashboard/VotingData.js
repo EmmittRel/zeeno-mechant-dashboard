@@ -69,7 +69,7 @@ const VotingData = () => {
       const today = new Date().toISOString().split('T')[0];
       const response = await axios.post(
         'https://auth.zeenopay.com/payments/qr/transactions/static',
-        { 'start_date': "2025-03-21", 'end_date': today },
+        { 'start_date': "2025-03-20", 'end_date': today },
         {
           headers: {
             'Content-Type': 'application/json',

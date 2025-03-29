@@ -64,7 +64,7 @@ const usePaymentProcessor = (token, event_id) => {
           'Authorization': `Bearer ${token}`,
         },
         body: JSON.stringify({
-          'start_date': "2025-03-21",
+          'start_date': "2025-03-20",
           'end_date': today
         })
       });

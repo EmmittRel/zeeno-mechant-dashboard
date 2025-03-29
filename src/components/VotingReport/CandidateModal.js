@@ -6,7 +6,15 @@ import { FaEdit } from "react-icons/fa";
 import useS3Upload from "../../hooks/useS3Upload";
 import { calculateVotes } from '../AmountCalculator';
 
-const CandidateModel = ({ visible, onClose, title, candidate, isEditMode, onUpdate }) => {
+const CandidateModel = ({ 
+  visible, 
+  onClose, 
+  title, 
+  candidate, 
+  isEditMode, 
+  onUpdate, 
+  contestants = [] 
+}) => {
   const [formData, setFormData] = useState(candidate || {});
   const [voterDetails, setVoterDetails] = useState([]);
   const { token } = useToken();
@@ -14,136 +22,121 @@ const CandidateModel = ({ visible, onClose, title, candidate, isEditMode, onUpda
   const [voterError, setVoterError] = useState(null);
   const [selectedFile, setSelectedFile] = useState(null);
   const [uploadProgress, setUploadProgress] = useState(0);
-
-  // Call the hook at the top level
+  
   const { uploadFile } = useS3Upload();
 
   useEffect(() => {
     setFormData(candidate || {});
-    if (candidate && candidate.id) {
-      fetchVoterDetails(candidate.id);
+    if (candidate?.id) {
+      fetchAllVoterDetails(candidate.id);
     }
   }, [candidate]);
 
-  // Handle image upload
-  const handleImageUpload = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      setSelectedFile(file); // Set the selected file
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setFormData((prevData) => ({ ...prevData, avatar: reader.result }));
-      };
-      reader.readAsDataURL(file);
+  const extractIntentIdFromNQR = (addenda1, addenda2) => {
+    try {
+      if (!addenda1 || !addenda2) return null;
+
+      const combined = `${addenda1}-${addenda2}`;
+      const hexMatch = combined.match(/vnpr-([a-f0-9]+)/i);
+      if (!hexMatch || !hexMatch[1]) return null;
+
+      return parseInt(hexMatch[1], 16);
+    } catch (error) {
+      return null;
     }
   };
 
-  // Handle form submission
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-
+  const fetchNQRPayments = async (contestantId) => {
+    if (!token || !contestantId) return [];
+    
     try {
-      let imgUrl = formData.avatar;
+      const today = new Date().toISOString().split('T')[0];
+      const response = await fetch(
+        'https://auth.zeenopay.com/payments/qr/transactions/static',
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            'start_date': '2025-03-20',
+            'end_date': today
+          })
+        }
+      );
 
-      if (selectedFile) {
-        imgUrl = await new Promise((resolve, reject) => {
-          uploadFile(
-            selectedFile,
-            (progress) => setUploadProgress(progress),
-            () => {
-              const url = `https://${process.env.REACT_APP_AWS_S3_BUCKET}.s3.${process.env.REACT_APP_AWS_REGION}.amazonaws.com/${selectedFile.name}`;
-              resolve(url);
-            },
-            (err) => reject(err)
-          );
-        });
+      if (!response.ok) return [];
+      
+      const data = await response.json();
+      const transactions = data.transactions?.responseBody || [];
+      const processedData = [];
+
+      for (const txn of transactions) {
+        if (txn.debitStatus !== '000') continue;
+
+        const intentId = extractIntentIdFromNQR(txn.addenda1, txn.addenda2);
+        
+        if (intentId && String(intentId) === String(contestantId)) {
+          const votes = calculateVotes(txn.amount, 'NPR');
+          if (votes > 0) {
+            processedData.push({
+              name: txn.payerName,
+              phone_no: txn.payerMobileNumber,
+              processor: 'NepalPayQR',
+              votes: votes,
+              transactionTime: txn.localTransactionDateTime
+            });
+          }
+        }
       }
 
-      // Update the form data with the new image URL
-      const updatedFormData = {
-        ...formData,
-        avatar: imgUrl,
-      };
-
-      // Call the onUpdate function with the updated form data
-      onUpdate(updatedFormData);
+      return processedData;
     } catch (err) {
-      console.error("Error uploading image:", err);
+      console.error('NQR processing error:', err);
+      return [];
     }
   };
 
-  // Fetch voter details and calculate votes
-  const fetchVoterDetails = async (miscKv) => {
-    setIsLoadingVoters(true);
-    setVoterError(null);
-
+  const fetchRegularPayments = async (contestantId) => {
     try {
       // Fetch regular payment intents
       const paymentsResponse = await fetch(
         `https://auth.zeenopay.com/payments/intents/`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
+        { headers: { Authorization: `Bearer ${token}` } }
       );
-
-      if (!paymentsResponse.ok) {
-        throw new Error("Failed to fetch payment intents data.");
-      }
-
+      if (!paymentsResponse.ok) throw new Error("Failed to fetch payment intents");
       const paymentIntents = await paymentsResponse.json();
 
-      // Fetch QR/NQR payment intents
+      // Fetch QR payment intents (excluding NQR)
       const qrPaymentsResponse = await fetch(
         `https://auth.zeenopay.com/payments/qr/intents`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (!qrPaymentsResponse.ok) throw new Error("Failed to fetch QR payment intents");
+      const qrPaymentIntents = await qrPaymentsResponse.json();
+      
+      const filteredQrIntents = qrPaymentIntents.filter(
+        (intent) => intent.processor?.toUpperCase() === "QR"
       );
 
-      if (!qrPaymentsResponse.ok) {
-        throw new Error("Failed to fetch QR/NQR payment intents data.");
-      }
-
-      const qrPaymentIntents = await qrPaymentsResponse.json();
-
-      // Combine regular and QR/NQR payment intents
-      const allPaymentIntents = [...paymentIntents, ...qrPaymentIntents];
-
-      // Filter payment intents to include only successful transactions (status === 'S')
+      // Combine payment intents
+      const allPaymentIntents = [...paymentIntents, ...filteredQrIntents];
       const successfulPaymentIntents = allPaymentIntents.filter(
         (intent) => intent.status === "S"
       );
 
-      // Fetch events data
-      const eventsResponse = await fetch(
-        `https://auth.zeenopay.com/events/`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
-
-      if (!eventsResponse.ok) {
-        throw new Error("Failed to fetch events data.");
-      }
-
-      const events = await eventsResponse.json();
-
-      // Match intents with the candidate's misc_kv and intent type "V"
+      // Match intents with candidate
       const matchedIntents = successfulPaymentIntents.filter(
-        (intent) => String(intent.intent_id) === String(miscKv) && intent.intent === "V"
+        (intent) => String(intent.intent_id) === String(contestantId) && intent.intent === "V"
       );
 
-      // Calculate votes and prepare voter list
+      // Prepare voter lists
       const voterList = matchedIntents.map((intent) => {
         let currency = "USD";
         const processor = intent.processor?.toUpperCase();
 
-        // Determine the currency based on the processor
-        if (
-          ["ESEWA", "KHALTI", "FONEPAY", "PRABHUPAY", "NQR", "QR"].includes(
-            processor
-          )
-        ) {
+        if (["ESEWA", "KHALTI", "FONEPAY", "PRABHUPAY", "QR"].includes(processor)) {
           currency = "NPR";
         } else if (["PHONEPE", "PAYU"].includes(processor)) {
           currency = "INR";
@@ -151,24 +144,14 @@ const CandidateModel = ({ visible, onClose, title, candidate, isEditMode, onUpda
           currency = intent.currency?.toUpperCase() || "USD";
         }
 
-        // Use the imported utility function to calculate votes
         const votes = calculateVotes(intent.amount, currency);
 
-        // Determine payment method
         let paymentMethod;
-        if (processor === "NQR") {
-          paymentMethod = "NepalPayQR";
-        } else if (processor === "QR") {
-          paymentMethod = "FonePayQR";
-        } else if (processor === "FONEPAY") {
-          paymentMethod = "iMobile Banking";
-        } else if (processor === "PHONEPE") {
-          paymentMethod = "India";
-        } else if (["PAYU", "STRIPE"].includes(processor)) {
-          paymentMethod = "International";
-        } else {
-          paymentMethod = processor || "N/A";
-        }
+        if (processor === "QR") paymentMethod = "FonePayQR";
+        else if (processor === "FONEPAY") paymentMethod = "iMobile Banking";
+        else if (processor === "PHONEPE") paymentMethod = "India";
+        else if (["PAYU", "STRIPE"].includes(processor)) paymentMethod = "International";
+        else paymentMethod = processor || "N/A";
 
         return {
           name: intent.name,
@@ -177,12 +160,29 @@ const CandidateModel = ({ visible, onClose, title, candidate, isEditMode, onUpda
           votes: votes,
           transactionTime: intent.updated_at,
         };
-      });
+      }).filter(voter => voter.votes > 0);
 
-      // Sort voter list by transaction time (newest first)
-      voterList.sort((a, b) => new Date(b.transactionTime) - new Date(a.transactionTime));
+      return voterList;
+    } catch (error) {
+      console.error("Error fetching regular payments:", error);
+      return [];
+    }
+  };
 
-      setVoterDetails(voterList);
+  const fetchAllVoterDetails = async (contestantId) => {
+    setIsLoadingVoters(true);
+    setVoterError(null);
+    
+    try {
+      const [regularPayments, nqrPayments] = await Promise.all([
+        fetchRegularPayments(contestantId),
+        fetchNQRPayments(contestantId)
+      ]);
+
+      const combinedVoterList = [...regularPayments, ...nqrPayments]
+        .sort((a, b) => new Date(b.transactionTime) - new Date(a.transactionTime));
+
+      setVoterDetails(combinedVoterList);
     } catch (error) {
       setVoterError(error.message);
     } finally {
@@ -190,35 +190,55 @@ const CandidateModel = ({ visible, onClose, title, candidate, isEditMode, onUpda
     }
   };
 
-  const totalVotes = voterDetails.reduce((sum, voter) => sum + voter.votes, 0);
-
-  // Function to get processor color
-  const getProcessorColor = (processor) => {
-    switch (processor.toUpperCase()) {
-      case "ESEWA":
-        return "green";
-      case "PRABHUPAY":
-        return "red";
-      case "KHALTI":
-        return "#200a69";
-      case "FONEPAY":
-        return "red";
-      case "NEPALPAYQR":
-        return "skyblue";
-      case "iMobileBanking":
-        return "blue";
-      case "STRIPE":
-        return "#5433ff";
-      case "PHONEPE":
-        return "#5F259F";
-      case "PAYU":
-        return "#FF5722";
-      default:
-        return "black";
+  const handleImageUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setSelectedFile(file);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setFormData((prevData) => ({ ...prevData, avatar: reader.result }));
+      };
+      reader.readAsDataURL(file);
     }
   };
 
-  // Function to format transaction time
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      let imgUrl = formData.avatar;
+      if (selectedFile) {
+        imgUrl = await new Promise((resolve, reject) => {
+          uploadFile(
+            selectedFile,
+            (progress) => setUploadProgress(progress),
+            (url) => resolve(url),
+            (err) => reject(err)
+          );
+        });
+      }
+      onUpdate({ ...formData, avatar: imgUrl });
+    } catch (err) {
+      console.error("Error uploading image:", err);
+    }
+  };
+
+  const totalVotes = voterDetails.reduce((sum, voter) => sum + voter.votes, 0);
+
+  const getProcessorColor = (processor) => {
+    switch (processor?.toUpperCase()) {
+      case "ESEWA": return "green";
+      case "PRABHUPAY": return "red";
+      case "KHALTI": return "#200a69";
+      case "FONEPAY": return "red";
+      case "NEPALPAYQR": return "skyblue";
+      case "iMobileBanking": return "blue";
+      case "STRIPE": return "#5433ff";
+      case "PHONEPE": return "#5F259F";
+      case "PAYU": return "#FF5722";
+      default: return "black";
+    }
+  };
+
   const formatTransactionTime = (dateString) => {
     const date = new Date(dateString);
     const options = {
@@ -231,12 +251,10 @@ const CandidateModel = ({ visible, onClose, title, candidate, isEditMode, onUpda
     };
     const formattedDate = new Intl.DateTimeFormat("en-US", options).format(date);
     const day = date.getDate();
-    const ordinalSuffix =
-      day === 1 ? "st" : day === 2 ? "nd" : day === 3 ? "rd" : "th";
+    const ordinalSuffix = day === 1 ? "st" : day === 2 ? "nd" : day === 3 ? "rd" : "th";
     return formattedDate.replace(/\d+/, `${day}${ordinalSuffix}`);
   };
 
-  // Function to export voting details to Excel
   const exportToExcel = () => {
     const dataForExport = voterDetails.map((voter) => ({
       "Full Name": voter.name,
@@ -252,22 +270,18 @@ const CandidateModel = ({ visible, onClose, title, candidate, isEditMode, onUpda
     XLSX.writeFile(workbook, "voting_details.xlsx");
   };
 
-  if (!visible) return null;
-
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormData((prevData) => ({ ...prevData, [name]: value }));
   };
 
   const handleOverlayClick = (e) => {
-    if (e.target === e.currentTarget) {
-      onClose();
-    }
+    if (e.target === e.currentTarget) onClose();
   };
 
-  const handleModalContainerClick = (e) => {
-    e.stopPropagation();
-  };
+  const handleModalContainerClick = (e) => e.stopPropagation();
+
+  if (!visible) return null;
 
   return (
     <div className="modal-overlay" onClick={handleOverlayClick}>
@@ -279,7 +293,54 @@ const CandidateModel = ({ visible, onClose, title, candidate, isEditMode, onUpda
 
         {isEditMode ? (
           <form onSubmit={handleSubmit} className="edit-form">
-            {/* Form fields for editing */}
+            <div className="form-group">
+              <label>Name</label>
+              <input
+                type="text"
+                name="name"
+                value={formData.name || ''}
+                onChange={handleInputChange}
+                required
+              />
+            </div>
+            <div className="form-group">
+              <label>Avatar</label>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleImageUpload}
+              />
+              {uploadProgress > 0 && uploadProgress < 100 && (
+                <div className="upload-progress">
+                  <progress value={uploadProgress} max="100" />
+                  <span>{uploadProgress}%</span>
+                </div>
+              )}
+            </div>
+            <div className="form-group">
+              <label>Bio</label>
+              <textarea
+                name="bio"
+                value={formData.bio || ''}
+                onChange={handleInputChange}
+              />
+            </div>
+            <div className="form-group">
+              <label>Status</label>
+              <select
+                name="status"
+                value={formData.status || 'O'}
+                onChange={handleInputChange}
+              >
+                <option value="O">Ongoing</option>
+                <option value="E">Eliminated</option>
+                <option value="H">Hidden</option>
+                <option value="C">Closed</option>
+              </select>
+            </div>
+            <button type="submit" className="save-btn">
+              Save Changes
+            </button>
           </form>
         ) : (
           <div className="modal-content">
@@ -292,57 +353,30 @@ const CandidateModel = ({ visible, onClose, title, candidate, isEditMode, onUpda
                 />
               </div>
               <div className="candidate-details">
-                <p>
-                  <strong>Name:</strong> {candidate.name}
-                </p>
-                <p>
-                  <strong>Contestant ID:</strong> {candidate.id}
-                </p>
+                <p><strong>Name:</strong> {candidate.name}</p>
+                <p><strong>Contestant ID:</strong> {candidate.id}</p>
                 <p>
                   <strong>Status:</strong>{" "}
-                  <span
-                    className={`status-badge 
-                      ${candidate.status === "O" ? "status-ongoing" :
-                      candidate.status === "E" ? "status-eliminated" :
-                      candidate.status === "H" ? "status-hidden" :
-                      candidate.status === "C" ? "status-closed" : ""}`}
-                  >
-                    {candidate.status === "O"
-                      ? "Ongoing"
-                      : candidate.status === "E"
-                      ? "Eliminated"
-                      : candidate.status === "H"
-                      ? "Hidden"
-                      : candidate.status === "C"
-                      ? "Closed"
-                      : "Unknown"}
+                  <span className={`status-badge ${
+                    candidate.status === "O" ? "status-ongoing" :
+                    candidate.status === "E" ? "status-eliminated" :
+                    candidate.status === "H" ? "status-hidden" :
+                    candidate.status === "C" ? "status-closed" : ""
+                  }`}>
+                    {candidate.status === "O" ? "Ongoing" :
+                     candidate.status === "E" ? "Eliminated" :
+                     candidate.status === "H" ? "Hidden" :
+                     candidate.status === "C" ? "Closed" : "Unknown"}
                   </span>
                 </p>
-                <p>
-                  <strong>Total Votes:</strong> {totalVotes} Votes
-                </p>
-                <p>
-                  <strong>Bio:</strong> {candidate.bio || "Not provided"}
-                </p>
+                <p><strong>Total Votes:</strong> {totalVotes} Votes</p>
+                <p><strong>Bio:</strong> {candidate.bio || "Not provided"}</p>
               </div>
             </div>
 
-            {/* Voting Information Section */}
             <div className="voting-info-header">
               <h3 className="modal-section-title">Voting Information</h3>
-              <button
-                onClick={exportToExcel}
-                className="export-btn"
-                style={{
-                  background: "#028248",
-                  color: "#fff",
-                  border: "none",
-                  padding: "6px 10px",
-                  borderRadius: "4px",
-                  cursor: "pointer",
-                  fontSize: "14px",
-                }}
-              >
+              <button onClick={exportToExcel} className="export-btn">
                 Export to Excel
               </button>
             </div>
@@ -374,12 +408,10 @@ const CandidateModel = ({ visible, onClose, title, candidate, isEditMode, onUpda
                           <tr key={index}>
                             <td>{voter.name}</td>
                             <td>
-                              <span
-                                style={{
-                                  fontWeight: "bold",
-                                  color: getProcessorColor(voter.processor),
-                                }}
-                              >
+                              <span style={{
+                                fontWeight: "bold",
+                                color: getProcessorColor(voter.processor),
+                              }}>
                                 {voter.processor}
                               </span>
                             </td>
@@ -405,321 +437,361 @@ const CandidateModel = ({ visible, onClose, title, candidate, isEditMode, onUpda
       </div>
 
       <style>{`
-  /* Import Poppins font from Google Fonts */
-  @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap');
+        /* Import Poppins font from Google Fonts */
+        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap');
 
-  /* Modal Overlay */
-  .modal-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0, 0, 0, 0.5);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    z-index: 1000;
-    animation: fadeIn 0.3s ease;
-    font-family: 'Poppins', sans-serif;
-    padding: 16px;
-    box-sizing: border-box;
-  }
+        /* Modal Overlay */
+        .modal-overlay {
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          background: rgba(0, 0, 0, 0.5);
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          z-index: 1000;
+          animation: fadeIn 0.3s ease;
+          font-family: 'Poppins', sans-serif;
+          padding: 16px;
+          box-sizing: border-box;
+        }
 
-  /* Modal Container */
-  .modal-container {
-    background: #fff;
-    border-radius: 8px;
-    width: calc(100% - 32px);
-    max-width: 600px;
-    max-height: 90vh;
-    padding: 20px;
-    position: relative;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    animation: slideIn 0.3s ease;
-    overflow-y: auto;
-    font-family: 'Poppins', sans-serif;
-    box-sizing: border-box;
-  }
+        /* Modal Container */
+        .modal-container {
+          background: #fff;
+          border-radius: 8px;
+          width: calc(100% - 32px);
+          max-width: 600px;
+          max-height: 90vh;
+          padding: 20px;
+          position: relative;
+          box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+          animation: slideIn 0.3s ease;
+          overflow-y: auto;
+          font-family: 'Poppins', sans-serif;
+          box-sizing: border-box;
+        }
 
-  /* Close Button */
-  .modal-close-btn {
-    position: absolute;
-    top: 10px;
-    right: 10px;
-    background: none;
-    border: none;
-    font-size: 1.5rem;
-    color: #333;
-    cursor: pointer;
-    transition: color 0.2s ease;
-  }
+        /* Close Button */
+        .modal-close-btn {
+          position: absolute;
+          top: 10px;
+          right: 10px;
+          background: none;
+          border: none;
+          font-size: 1.5rem;
+          color: #333;
+          cursor: pointer;
+          transition: color 0.2s ease;
+        }
 
-  .modal-close-btn:hover {
-    color: #e74c3c;
-  }
+        .modal-close-btn:hover {
+          color: #e74c3c;
+        }
 
-  /* Modal Title */
-  .modal-title {
-    margin-top: 0;
-    font-size: 1.5rem;
-    color: #333;
-    text-align: center;
-  }
+        /* Modal Title */
+        .modal-title {
+          margin-top: 0;
+          font-size: 1.5rem;
+          color: #333;
+          text-align: center;
+        }
 
-  /* Candidate Avatar Styling */
-  .candidate-avatar {
-    position: relative;
-    width: 120px;
-    height: 120px;
-    border-radius: 15px;
-    overflow: hidden;
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
-    border: 3px solid #fff;
-    margin: 0 auto 20px;
-  }
+        /* Candidate Avatar Styling */
+        .candidate-avatar {
+          position: relative;
+          width: 120px;
+          height: 120px;
+          border-radius: 15px;
+          overflow: hidden;
+          box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+          border: 3px solid #fff;
+          margin: 0 auto 20px;
+        }
 
-  .candidate-avatar-edit {
-    position: relative;
-    width: 120px;
-    height: 120px;
-    border-radius: 15px;
-    overflow: hidden;
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
-    border: 3px solid #fff;
-    margin: 0 0 20px;
-  }
+        .candidate-avatar-edit {
+          position: relative;
+          width: 120px;
+          height: 120px;
+          border-radius: 15px;
+          overflow: hidden;
+          box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+          border: 3px solid #fff;
+          margin: 0 0 20px;
+        }
 
-  .candidate-photo {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: block;
-    transition: transform 0.3s ease;
-  }
+        .candidate-photo {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          display: block;
+          transition: transform 0.3s ease;
+        }
 
-  .candidate-avatar:hover .candidate-photo {
-    transform: scale(1.1);
-  }
+        .candidate-avatar:hover .candidate-photo {
+          transform: scale(1.1);
+        }
 
-  .edit-avatar-overlay {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background-color: rgba(0, 0, 0, 0.5);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    opacity: 0;
-    transition: opacity 0.3s ease;
-  }
+        .edit-avatar-overlay {
+          position: absolute;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          background-color: rgba(0, 0, 0, 0.5);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          opacity: 0;
+          transition: opacity 0.3s ease;
+        }
 
-  .candidate-avatar:hover .edit-avatar-overlay {
-    opacity: 1;
-  }
+        .candidate-avatar:hover .edit-avatar-overlay {
+          opacity: 1;
+        }
 
-  .edit-avatar-icon {
-    color: #fff;
-    font-size: 24px;
-    cursor: pointer;
-  }
+        .edit-avatar-icon {
+          color: #fff;
+          font-size: 24px;
+          cursor: pointer;
+        }
 
-  /* Candidate Details */
-  .candidate-details {
-    text-align: center;
-  }
+        /* Candidate Details */
+        .candidate-details {
+          text-align: center;
+        }
 
-  .candidate-details p {
-    margin: 10px 0;
-  }
+        .candidate-details p {
+          margin: 10px 0;
+        }
 
-  /* Voting Information Header */
-  .voting-info-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
+        /* Voting Information Header */
+        .voting-info-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin: 20px 0 10px;
+        }
 
-  /* Table Wrapper */
-  .table-wrapper {
-    max-height: 200px;
-    border: 1px solid #ddd;
-    border-radius: 8px;
-  }
+        .modal-section-title {
+          margin: 0;
+          font-size: 1.2rem;
+        }
 
-  /* Table Header Wrapper */
-  .table-header-wrapper {
-    position: sticky;
-    top: 0;
-    z-index: 2;
-    background-color: #028248;
-  }
+        /* Table Wrapper */
+        .table-wrapper {
+          max-height: 300px;
+          border: 1px solid #ddd;
+          border-radius: 8px;
+          overflow: hidden;
+        }
 
+        /* Table Header Wrapper */
+        .table-header-wrapper {
+          position: sticky;
+          top: 0;
+          z-index: 2;
+        }
 
-  /* Submit Button */
-  .submit-btn {
-    background: #028248;
-    color: white;
-    border: none;
-    padding: 10px 20px;
-    border-radius: 6px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    cursor: pointer;
-    transition: background 0.3s ease;
-    margin-top: 10px;
-  }
+        .table-body-wrapper {
+          max-height: 250px;
+          overflow-y: auto;
+        }
 
-  .submit-btn:hover {
-    background: rgb(59, 177, 124);
-  }
+        /* Voters Table */
+        .voters-table {
+          width: 100%;
+          border-collapse: collapse;
+          font-size: 14px;
+        }
 
-  /* Export Button */
-  .export-btn {
-    background: #028248;
-    color: #fff;
-    border: "none",
-    padding: "6px 10px",
-    borderRadius: "4px",
-    cursor: "pointer",
-    fontSize: "14px",
-  }
+        .voters-table th {
+          background-color: #028248;
+          color: white;
+          padding: 10px;
+          text-align: left;
+          position: sticky;
+          top: 0;
+        }
 
-  .export-btn:hover {
-    background: #016138;
-  }
+        .voters-table td {
+          padding: 10px;
+          border-bottom: 1px solid #eee;
+        }
 
-  /* Status Badges */
-  .status-badge {
-    padding: 4px 8px;
-    border-radius: 4px;
-    font-size: 12px;
-    font-weight: bold;
-  }
+        .voters-table tr:last-child td {
+          border-bottom: none;
+        }
 
-  .status-ongoing {
-    background-color: #28a745;
-    color: #fff;
-  }
+        .voters-table tr:hover {
+          background-color: #f5f5f5;
+        }
 
-  .status-eliminated {
-    background-color: #dc3545;
-    color: #fff;
-  }
+        /* Form Styles */
+        .edit-form {
+          display: flex;
+          flex-direction: column;
+          gap: 15px;
+        }
 
-  .status-hidden {
-    background-color: #6c757d;
-    color: #fff;
-  }
+        .form-group {
+          display: flex;
+          flex-direction: column;
+          gap: 5px;
+        }
 
-  .status-closed {
-    background-color: #ffc107;
-    color: #000;
-  }
+        .form-group label {
+          font-weight: 500;
+        }
 
-  /* Animations */
-  @keyframes fadeIn {
-    from {
-      opacity: 0;
-    }
-    to {
-      opacity: 1;
-    }
-  }
+        .form-group input,
+        .form-group textarea,
+        .form-group select {
+          padding: 8px 12px;
+          border: 1px solid #ddd;
+          border-radius: 4px;
+          font-family: 'Poppins', sans-serif;
+        }
 
-  @keyframes slideIn {
-    from {
-      transform: translateY(-20px);
-    }
-    to {
-      transform: translateY(0);
-    }
-  }
+        .form-group textarea {
+          min-height: 80px;
+          resize: vertical;
+        }
 
-  /* Custom Dropdown Styling */
-  .custom-dropdown {
-    position: relative;
-    width: 100%;
-    border: 1px solid #ccc;
-    border-radius: 8px;
-    background-color: #fff;
-    overflow: hidden;
-    transition: border-color 0.3s ease;
-  }
+        /* Buttons */
+        .save-btn {
+          background-color: #028248;
+          color: white;
+          border: none;
+          padding: 10px 15px;
+          border-radius: 4px;
+          cursor: pointer;
+          font-weight: 500;
+          transition: background-color 0.2s ease;
+          align-self: flex-start;
+        }
 
-  .custom-dropdown:hover {
-    border-color: #5433ff;
-  }
+        .save-btn:hover {
+          background-color: #016138;
+        }
 
-  .custom-dropdown select {
-    width: 100%;
-    padding: 10px 12px;
-    font-size: 14px;
-    border: none;
-    outline: none;
-    background-color: transparent;
-    appearance: none;
-    cursor: pointer;
-  }
+        .export-btn {
+          background-color: #028248;
+          color: white;
+          border: none;
+          padding: 6px 12px;
+          border-radius: 4px;
+          cursor: pointer;
+          font-size: 14px;
+          transition: background-color 0.2s ease;
+        }
 
-  .custom-dropdown .dropdown-arrow {
-    position: absolute;
-    top: 50%;
-    right: 12px;
-    transform: translateY(-50%);
-    pointer-events: none;
-    color: #5433ff;
-    font-size: 12px;
-  }
+        .export-btn:hover {
+          background-color: #016138;
+        }
 
-  /* Styling for options */
-  .custom-dropdown select option {
-    padding: 10px;
-    background-color: #fff;
-    color: #333;
-  }
+        /* Upload Progress */
+        .upload-progress {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          margin-top: 5px;
+        }
 
-  .custom-dropdown select option:hover {
-    background-color: #f0f0f0;
-  }
+        .upload-progress progress {
+          width: 100%;
+        }
 
-  /* Media Queries for Mobile Responsiveness */
-  @media (max-width: 768px) {
-    .modal-container {
-      width: calc(100% - 32px);
-      max-height: 60vh;
-      padding: 16px;
-    }
+        /* Status Badges */
+        .status-badge {
+          padding: 4px 8px;
+          border-radius: 4px;
+          font-size: 12px;
+          font-weight: bold;
+        }
 
-    .modal-title {
-      font-size: 1.2rem;
-    }
+        .status-ongoing {
+          background-color: #28a745;
+          color: #fff;
+        }
 
-    .candidate-avatar,
-    .candidate-avatar-edit {
-      width: 100px;
-      height: 100px;
-    }
+        .status-eliminated {
+          background-color: #dc3545;
+          color: #fff;
+        }
 
-    .candidate-details p {
-      font-size: 14px;
-    }
+        .status-hidden {
+          background-color: #6c757d;
+          color: #fff;
+        }
 
-    .voters-table th,
-    .voters-table td {
-      font-size: 12px;
-    }
+        .status-closed {
+          background-color: #ffc107;
+          color: #000;
+        }
 
-    .submit-btn,
-    .export-btn {
-      padding: 8px 16px;
-      font-size: 12px;
-    }
-  }
-`}</style>
+        /* Error Message */
+        .error-message {
+          color: #dc3545;
+          text-align: center;
+        }
+
+        /* Animations */
+        @keyframes fadeIn {
+          from {
+            opacity: 0;
+          }
+          to {
+            opacity: 1;
+          }
+        }
+
+        @keyframes slideIn {
+          from {
+            transform: translateY(-20px);
+          }
+          to {
+            transform: translateY(0);
+          }
+        }
+
+        /* Media Queries for Mobile Responsiveness */
+        @media (max-width: 768px) {
+          .modal-container {
+            width: calc(100% - 32px);
+            max-height: 80vh;
+            padding: 16px;
+          }
+
+          .modal-title {
+            font-size: 1.2rem;
+          }
+
+          .candidate-avatar,
+          .candidate-avatar-edit {
+            width: 100px;
+            height: 100px;
+          }
+
+          .candidate-details p {
+            font-size: 14px;
+          }
+
+          .voters-table th,
+          .voters-table td {
+            font-size: 12px;
+            padding: 8px;
+          }
+
+          .save-btn,
+          .export-btn {
+            padding: 8px 12px;
+            font-size: 14px;
+          }
+        }
+      `}</style>
     </div>
   );
 };
