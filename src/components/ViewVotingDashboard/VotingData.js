@@ -1,20 +1,73 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import Chart from "react-apexcharts";
 import axios from "axios";
 import { useToken } from "../../context/TokenContext";
 import { useParams } from "react-router-dom";
 import CandidateList from "./Contestant";
-import { calculateVotes } from '../AmountCalculator'; 
+import { calculateVotes } from '../AmountCalculator';
+
+// API Configuration
+const API_CONFIG = {
+  BASE_URL: "https://auth.zeenopay.com",
+  ENDPOINTS: {
+    EVENTS: "/events/",
+    PAYMENT_INTENTS: "/payments/intents/",
+    QR_INTENTS: "/payments/qr/intents",
+    NQR_TRANSACTIONS: "/payments/qr/transactions/static"
+  },
+  DEFAULT_DATES: {
+    START_DATE: "2025-03-20"
+  }
+};
+
+// API Service
+const apiService = {
+  get: async (endpoint, token, params = {}) => {
+    const url = `${API_CONFIG.BASE_URL}${endpoint}`;
+    const response = await axios.get(url, {
+      headers: { Authorization: `Bearer ${token}` },
+      params
+    });
+    return response.data;
+  },
+
+  post: async (endpoint, token, data = {}) => {
+    const url = `${API_CONFIG.BASE_URL}${endpoint}`;
+    const response = await axios.post(url, data, {
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}` 
+      }
+    });
+    return response.data;
+  },
+
+  getEvents: (token) => apiService.get(API_CONFIG.ENDPOINTS.EVENTS, token),
+  getPaymentIntents: (eventId, token) => 
+    apiService.get(API_CONFIG.ENDPOINTS.PAYMENT_INTENTS, token, { event_id: eventId }),
+  getQrIntents: (eventId, token) => 
+    apiService.get(API_CONFIG.ENDPOINTS.QR_INTENTS, token, { event_id: eventId }),
+  getNqrTransactions: (token, endDate) => 
+    apiService.post(API_CONFIG.ENDPOINTS.NQR_TRANSACTIONS, token, {
+      start_date: API_CONFIG.DEFAULT_DATES.START_DATE,
+      end_date: endDate
+    })
+};
 
 const VotingData = () => {
   const { token } = useToken();
   const { event_id } = useParams();
-  const [chartOptions, setChartOptions] = useState({
+  const [currentDate, setCurrentDate] = useState("");
+  const [isMobile, setIsMobile] = useState(false);
+  const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [series, setSeries] = useState([{ name: "Votes", data: [0, 0, 0, 0] }]);
+
+  const chartOptions = useMemo(() => ({
     chart: {
       type: "line",
       toolbar: { show: false },
       zoom: { enabled: false },
-      events: { mouseMove: (event, chartContext, config) => {} },
     },
     xaxis: {
       categories: ["12:00 am", "6:00 am", "12:00 pm", "6:00 pm"],
@@ -41,18 +94,10 @@ const VotingData = () => {
       },
     },
     grid: { borderColor: "#ECEFF1" },
-  });
+  }), []);
 
-  const [series, setSeries] = useState([{ name: "Votes", data: [0, 0, 0, 0] }]);
-  const [currentDate, setCurrentDate] = useState("");
-  const [isMobile, setIsMobile] = useState(false);
-  const [paymentInfo, setPaymentInfo] = useState(0);
-  const [error, setError] = useState(null);
-  const [nqrTransactions, setNqrTransactions] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  // Function to extract intent_id from NQR transaction
-  const getIntentIdFromNQR = (addenda1, addenda2) => {
+  // Extract intent_id from NQR transaction
+  const getIntentIdFromNQR = useCallback((addenda1, addenda2) => {
     try {
       const combined = `${addenda1}-${addenda2}`;
       const hexMatch = combined.match(/vnpr-([a-f0-9]+)/i);
@@ -61,96 +106,46 @@ const VotingData = () => {
       console.error('Error extracting intent_id from NQR:', error);
       return null;
     }
-  };
-
-  // Fetch NQR transactions
-  const fetchNQRTransactions = async () => {
-    try {
-      const today = new Date().toISOString().split('T')[0];
-      const response = await axios.post(
-        'https://auth.zeenopay.com/payments/qr/transactions/static',
-        { 'start_date': "2025-03-20", 'end_date': today },
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`,
-          }
-        }
-      );
-
-      if (response.data?.transactions?.responseBody) {
-        return response.data.transactions.responseBody.filter(
-          txn => txn.debitStatus === '000'
-        );
-      }
-      return [];
-    } catch (error) {
-      console.error('Error fetching NQR transactions:', error);
-      return [];
-    }
-  };
-
-  // Fetch event data to get payment_info
-  const fetchEventData = async () => {
-    try {
-      const response = await axios.get(`https://auth.zeenopay.com/events/`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-
-      const event = response.data.find(e => e.id === parseInt(event_id));
-      if (event) setPaymentInfo(event.payment_info);
-      return event;
-    } catch (err) {
-      console.error("Error fetching event data:", err);
-      setError("Failed to fetch event data.");
-      return null;
-    }
-  };
+  }, []);
 
   // Process all payment data and calculate votes by time intervals
-  const processVotingData = async () => {
+  const processVotingData = useCallback(async () => {
     setLoading(true);
     try {
-      // Fetch all required data in parallel
-      const [eventData, nqrData] = await Promise.all([
-        fetchEventData(),
-        fetchNQRTransactions()
+      const today = new Date().toISOString().split('T')[0];
+      
+      // Fetch all data in parallel
+      const [events, nqrData, regularPayments, qrPayments] = await Promise.all([
+        apiService.getEvents(token),
+        apiService.getNqrTransactions(token, today),
+        apiService.getPaymentIntents(event_id, token),
+        apiService.getQrIntents(event_id, token)
       ]);
 
-      if (!eventData) return;
-
-      // Fetch regular and QR payment intents
-      const [regularPayments, qrPayments] = await Promise.all([
-        axios.get(`https://auth.zeenopay.com/payments/intents/?event_id=${event_id}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        }),
-        axios.get(`https://auth.zeenopay.com/payments/qr/intents?event_id=${event_id}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        })
-      ]);
+      const event = events.find(e => e.id === parseInt(event_id));
+      if (!event) throw new Error("Event not found");
 
       // Filter QR payments to exclude NQR
-      const filteredQrPayments = qrPayments.data.filter(
+      const filteredQrPayments = qrPayments.filter(
         intent => intent.processor?.toUpperCase() === "QR"
       );
 
       // Combine all payment sources
       const allPayments = [
-        ...regularPayments.data,
+        ...regularPayments,
         ...filteredQrPayments,
-        ...nqrData.map(txn => ({
+        ...nqrData.transactions?.responseBody?.map(txn => ({
           intent_id: getIntentIdFromNQR(txn.addenda1, txn.addenda2),
           amount: txn.amount,
           processor: 'NQR',
           status: 'S',
           currency: 'NPR',
           updated_at: txn.localTransactionDateTime
-        }))
+        })) || []
       ];
 
       // Process successful payments only
       const successfulPayments = allPayments.filter(p => p.status === 'S');
-      setNqrTransactions(nqrData);
 
       // Calculate votes by time intervals
       const timeIntervals = ["12:00 am", "6:00 am", "12:00 pm", "6:00 pm"];
@@ -186,33 +181,37 @@ const VotingData = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [event_id, token, getIntentIdFromNQR]);
 
-  // Initial data load
+  // Initial data load and setup
   useEffect(() => {
-    processVotingData();
-    
-    // Set up refresh interval (every 5 minutes)
-    const interval = setInterval(processVotingData, 300000);
-    return () => clearInterval(interval);
-  }, [event_id, token]);
-
-  // Set current date and handle mobile view
-  useEffect(() => {
+    // Set current date
     setCurrentDate(new Date().toLocaleDateString("en-US", { 
       year: "numeric", month: "long", day: "numeric" 
     }));
 
+    // Handle mobile view
     const handleResize = () => setIsMobile(window.innerWidth <= 768);
     handleResize();
     window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, []);
+
+    // Fetch data and set up refresh interval
+    processVotingData();
+    const interval = setInterval(processVotingData, 300000);
+    
+    return () => {
+      window.removeEventListener("resize", handleResize);
+      clearInterval(interval);
+    };
+  }, [processVotingData]);
+
+  const hasVotingData = useMemo(() => 
+    series.some(s => s.data.some(vote => vote > 0)), 
+    [series]
+  );
 
   if (error) return <p className="error-message">{error}</p>;
   if (loading) return <p className="loading-message">Loading voting data...</p>;
-
-  const hasVotingData = series.some(s => s.data.some(vote => vote > 0));
 
   return (
     <div className="dashboard-container">

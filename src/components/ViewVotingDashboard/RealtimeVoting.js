@@ -1,9 +1,39 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { FaDownload } from 'react-icons/fa';
 import ReactCountryFlag from 'react-country-flag';
 import { useToken } from '../../context/TokenContext';
 import { calculateVotes } from '../AmountCalculator';
 import useNQRProcessor from '../useNQRProcessor';
+
+// API Configuration
+const API_CONFIG = {
+  BASE_URL: "https://auth.zeenopay.com",
+  ENDPOINTS: {
+    EVENTS: "/events",
+    CONTESTANTS: "/events/contestants",
+    PAYMENT_INTENTS: "/payments/intents",
+    QR_INTENTS: "/payments/qr/intents",
+    NQR_TRANSACTIONS: "/payments/qr/transactions/static"
+  },
+  DEFAULT_HEADERS: {
+    "Content-Type": "application/json"
+  }
+};
+
+// Static configuration objects
+const currencyToCountry = {
+  USD: 'US', AUD: 'AU', GBP: 'GB', CAD: 'CA', EUR: 'EU', AED: 'AE',
+  QAR: 'QA', MYR: 'MY', KWD: 'KW', HKD: 'HK', CNY: 'CN', SAR: 'SA',
+  OMR: 'OM', SGD: 'SG', NOK: 'NO', KRW: 'KR', JPY: 'JP', THB: 'TH',
+  INR: 'IN', NPR: 'NP',
+};
+
+const statusLabel = {
+  P: { label: 'Pending', color: '#FFA500' },
+  S: { label: 'Success', color: '#28A745' },
+  F: { label: 'Failed', color: '#DC3545' },
+  C: { label: 'Cancelled', color: '#6C757D' },
+};
 
 const RealtimeVoting = ({ id: event_id }) => {
   const { token } = useToken();
@@ -14,43 +44,35 @@ const RealtimeVoting = ({ id: event_id }) => {
   const [loading, setLoading] = useState(false);
   const rowsPerPage = 10;
 
-  // Currency to country code mapping
-  const currencyToCountry = {
-    USD: 'US',
-    AUD: 'AU',
-    GBP: 'GB',
-    CAD: 'CA',
-    EUR: 'EU',
-    AED: 'AE',
-    QAR: 'QA',
-    MYR: 'MY',
-    KWD: 'KW',
-    HKD: 'HK',
-    CNY: 'CN',
-    SAR: 'SA',
-    OMR: 'OM',
-    SGD: 'SG',
-    NOK: 'NO',
-    KRW: 'KR',
-    JPY: 'JP',
-    THB: 'TH',
-    INR: 'IN',
-    NPR: 'NP',
-  };
-
-  // Status labels and colors
-  const statusLabel = {
-    P: { label: 'Pending', color: '#FFA500' },
-    S: { label: 'Success', color: '#28A745' },
-    F: { label: 'Failed', color: '#DC3545' },
-    C: { label: 'Cancelled', color: '#6C757D' },
-  };
-
-  // Use the NQR processor hook
+  // Custom hook for NQR processing
   const { nqrData: nqrTransactions, loading: nqrLoading } = useNQRProcessor(token, event_id, contestants);
 
-  // Function to format date
-  const formatDate = (dateString) => {
+  // API call helper function
+  const apiCall = useCallback(async (endpoint, method = 'GET', params = {}, body = null) => {
+    const url = new URL(`${API_CONFIG.BASE_URL}${endpoint}`);
+    
+    // Add query parameters
+    Object.entries(params).forEach(([key, value]) => {
+      url.searchParams.append(key, value);
+    });
+
+    const options = {
+      method,
+      headers: {
+        ...API_CONFIG.DEFAULT_HEADERS,
+        'Authorization': `Bearer ${token}`
+      }
+    };
+    
+    if (body) options.body = JSON.stringify(body);
+    
+    const response = await fetch(url.toString(), options);
+    if (!response.ok) throw new Error(`API request failed: ${response.status}`);
+    return response.json();
+  }, [token]);
+
+  // Memoized date formatter
+  const formatDate = useCallback((dateString) => {
     const date = new Date(dateString);
     const day = date.getDate();
     const month = date.toLocaleString('en-US', { month: 'short' });
@@ -71,168 +93,114 @@ const RealtimeVoting = ({ id: event_id }) => {
     };
 
     return `${day}${ordinalSuffix(day)} ${month} ${year}, ${formattedHours}:${minutes} ${period}`;
-  };
+  }, []);
 
   // Fetch event data
   useEffect(() => {
     const fetchEventData = async () => {
       try {
-        const response = await fetch(`https://auth.zeenopay.com/events/${event_id}/`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-
-        if (!response.ok) {
-          throw new Error('Failed to fetch event data');
-        }
-
-        const result = await response.json();
-        setEventData(result);
+        const event = await apiCall(`${API_CONFIG.ENDPOINTS.EVENTS}/${event_id}`);
+        setEventData(event);
       } catch (error) {
         console.error('Error fetching event data:', error);
       }
     };
 
     fetchEventData();
-  }, [token, event_id]);
+  }, [apiCall, event_id]);
 
   // Fetch contestant data
   useEffect(() => {
     const fetchContestants = async () => {
       try {
-        const response = await fetch(`https://auth.zeenopay.com/events/contestants/?event_id=${event_id}`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-
-        if (!response.ok) {
-          throw new Error('Failed to fetch contestant data');
-        }
-
-        const result = await response.json();
-        setContestants(result);
+        const contestants = await apiCall(API_CONFIG.ENDPOINTS.CONTESTANTS, 'GET', { event_id });
+        setContestants(contestants);
       } catch (error) {
         console.error('Error fetching contestant data:', error);
       }
     };
 
     fetchContestants();
-  }, [token, event_id]);
+  }, [apiCall, event_id]);
 
-  // Fetch all payment data
+  // Process payment data
+  const processPaymentData = useCallback((payments, type) => {
+    return payments
+      .filter(item => item.event_id == event_id && item.status === 'S')
+      .map((item) => {
+        let currency = 'USD';
+        const processor = item.processor?.toUpperCase();
+        let paymentType = '';
+
+        if (type === 'regular') {
+          if (['ESEWA', 'KHALTI', 'FONEPAY', 'PRABHUPAY'].includes(processor)) {
+            currency = 'NPR';
+          } else if (['PHONEPE', 'PAYU'].includes(processor)) {
+            currency = 'INR';
+          } else if (processor === 'STRIPE') {
+            currency = item.currency?.toUpperCase() || 'USD';
+          }
+
+          if (processor === 'FONEPAY') {
+            paymentType = 'iMobile Banking';
+          } else if (processor === 'PHONEPE') {
+            paymentType = 'India';
+          } else if (['PAYU', 'STRIPE'].includes(processor)) {
+            paymentType = 'International';
+          } else {
+            paymentType = processor ? processor.charAt(0).toUpperCase() + processor.slice(1) : '';
+          }
+        } else if (type === 'qr') {
+          currency = 'NPR';
+          paymentType = 'FonePayQR';
+        }
+
+        const votes = calculateVotes(item.amount, currency);
+        const contestant = contestants.find((c) => c.id === item.intent_id);
+        const contestantName = contestant ? contestant.name : 'Unknown';
+
+        return {
+          name: item.name,
+          email: item.email || 'N/A',
+          phone: item.phone_no || 'N/A',
+          createdAt: item.created_at,
+          formattedCreatedAt: formatDate(item.created_at),
+          amount: item.amount,
+          status: statusLabel[item.status] || { label: item.status, color: '#6C757D' },
+          paymentType,
+          votes,
+          currency,
+          contestantName,
+        };
+      });
+  }, [event_id, contestants, formatDate]);
+
+  // Fetch and process all payment data
   useEffect(() => {
     const fetchAllData = async () => {
       if (!eventData || !contestants.length) return;
       
       setLoading(true);
       try {
-        // 1. Fetch regular payment intents (non-QR)
-        const regularResponse = await fetch(`https://auth.zeenopay.com/payments/intents/?event_id=${event_id}`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
+        // Fetch all data in parallel
+        const [regularPayments, qrPayments] = await Promise.all([
+          apiCall(API_CONFIG.ENDPOINTS.PAYMENT_INTENTS, 'GET', { event_id }),
+          apiCall(API_CONFIG.ENDPOINTS.QR_INTENTS, 'GET', { event_id })
+        ]);
 
-        if (!regularResponse.ok) {
-          throw new Error('Failed to fetch regular payment data');
-        }
-        const regularPayments = await regularResponse.json();
-
-        // 2. Fetch QR payments (only processor = 'QR')
-        const qrResponse = await fetch(`https://auth.zeenopay.com/payments/qr/intents?event_id=${event_id}`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-
-        if (!qrResponse.ok) {
-          throw new Error('Failed to fetch QR data');
-        }
-        const qrPayments = await qrResponse.json();
-
-        // Process regular payments (non-QR)
-        const processedRegularData = regularPayments
-          .filter((item) => item.event_id == event_id && item.status === 'S')
-          .map((item) => {
-            let currency = 'USD';
-            const processor = item.processor?.toUpperCase();
-
-            if (['ESEWA', 'KHALTI', 'FONEPAY', 'PRABHUPAY'].includes(processor)) {
-              currency = 'NPR';
-            } else if (['PHONEPE', 'PAYU'].includes(processor)) {
-              currency = 'INR';
-            } else if (processor === 'STRIPE') {
-              currency = item.currency?.toUpperCase() || 'USD';
-            }
-
-            const votes = calculateVotes(item.amount, currency);
-
-            let paymentType;
-            if (processor === 'FONEPAY') {
-              paymentType = 'iMobile Banking';
-            } else if (processor === 'PHONEPE') {
-              paymentType = 'India';
-            } else if (['PAYU', 'STRIPE'].includes(processor)) {
-              paymentType = 'International';
-            } else {
-              paymentType = processor
-                ? processor.charAt(0).toUpperCase() + processor.slice(1)
-                : '';
-            }
-
-            const contestant = contestants.find((c) => c.id === item.intent_id);
-            const contestantName = contestant ? contestant.name : 'Unknown';
-
-            return {
-              name: item.name,
-              email: item.email || 'N/A',
-              phone: item.phone_no || 'N/A',
-              createdAt: item.created_at,
-              formattedCreatedAt: formatDate(item.created_at),
-              amount: item.amount,
-              status: statusLabel[item.status] || { label: item.status, color: '#6C757D' },
-              paymentType: paymentType,
-              votes: votes,
-              currency: currency,
-              contestantName: contestantName,
-            };
-          });
-
-        // Process QR payments (only processor = 'QR')
-        const processedQRData = qrPayments
-          .filter((item) => 
-            item.event_id == event_id && 
-            item.status === 'S' && 
-            item.processor?.toUpperCase() === 'QR'
+        // Process data in parallel
+        const [processedRegularData, processedQRData] = await Promise.all([
+          processPaymentData(regularPayments, 'regular'),
+          processPaymentData(
+            qrPayments.filter(item => item.processor?.toUpperCase() === 'QR'), 
+            'qr'
           )
-          .map((item) => {
-            const currency = 'NPR';
-            const votes = calculateVotes(item.amount, currency);
-            
-            const contestant = contestants.find((c) => c.id === item.intent_id);
-            const contestantName = contestant ? contestant.name : 'Unknown';
+        ]);
 
-            return {
-              name: item.name,
-              email: item.email || 'N/A',
-              phone: item.phone_no || 'N/A',
-              createdAt: item.created_at,
-              formattedCreatedAt: formatDate(item.created_at),
-              amount: item.amount,
-              status: statusLabel[item.status] || { label: item.status, color: '#6C757D' },
-              paymentType: 'FonePayQR',
-              votes: votes,
-              currency: currency,
-              contestantName: contestantName,
-            };
-          });
-
-        // Combine all data, filter out 0 votes, and sort by date
+        // Combine all data
         const combinedData = [
-          ...processedRegularData, 
-          ...processedQRData, 
+          ...processedRegularData,
+          ...processedQRData,
           ...nqrTransactions
         ]
           .filter(item => item.votes > 0)
@@ -247,23 +215,17 @@ const RealtimeVoting = ({ id: event_id }) => {
     };
 
     fetchAllData();
-  }, [token, event_id, eventData, contestants, nqrTransactions]);
+  }, [token, event_id, eventData, contestants, nqrTransactions, processPaymentData, apiCall]);
 
-  // Handle CSV export
-  const handleExport = () => {
+  // CSV export handler
+  const handleExport = useCallback(() => {
     try {
       const headers = [
-        'Vote By',
-        'Vote To',
-        'Phone',
-        'Votes',
-        'Status',
-        'Payment Type',
-        'Currency',
-        'Transaction Time',
+        'Vote By', 'Vote To', 'Phone', 'Votes', 'Status', 
+        'Payment Type', 'Currency', 'Transaction Time'
       ];
 
-      const rows = data.map((row) => [
+      const rows = data.map(row => [
         row.name,
         row.contestantName,
         row.phone,
@@ -274,46 +236,51 @@ const RealtimeVoting = ({ id: event_id }) => {
         row.formattedCreatedAt,
       ]);
 
-      const csvContent =
-        headers.join(',') + '\n' + rows.map((row) => row.join(',')).join('\n');
-
+      const csvContent = [headers, ...rows].map(row => row.join(',')).join('\n');
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      
       const link = document.createElement('a');
-      link.href = URL.createObjectURL(blob);
+      link.href = url;
       link.download = 'realtime_voting_report.csv';
+      document.body.appendChild(link);
       link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
     } catch (error) {
       console.error('Error exporting data:', error);
     }
-  };
+  }, [data]);
 
   // Pagination logic
-  const indexOfLastRow = currentPage * rowsPerPage;
-  const indexOfFirstRow = indexOfLastRow - rowsPerPage;
-  const currentData = data.slice(indexOfFirstRow, indexOfLastRow);
-  const totalPages = Math.ceil(data.length / rowsPerPage);
+  const paginationData = useMemo(() => {
+    const indexOfLastRow = currentPage * rowsPerPage;
+    const indexOfFirstRow = indexOfLastRow - rowsPerPage;
+    return {
+      currentData: data.slice(indexOfFirstRow, indexOfLastRow),
+      totalPages: Math.ceil(data.length / rowsPerPage)
+    };
+  }, [data, currentPage, rowsPerPage]);
 
-  const handlePageChange = (page) => {
+  const handlePageChange = useCallback((page) => {
     setCurrentPage(page);
-  };
+  }, []);
 
   return (
     <div className="table-container">
       <div className="table-header">
-        <div className="search-bar">
-          <h3>Realtime Voting Data</h3>
-        </div>
-        <div className="actions">
-          <button className="export-btn" onClick={handleExport} disabled={loading || data.length === 0}>
-            <FaDownload className="export-icon" /> Export
-          </button>
-        </div>
+        <h3>Realtime Voting Data</h3>
+        <button 
+          className="export-btn" 
+          onClick={handleExport} 
+          disabled={loading || data.length === 0}
+        >
+          <FaDownload className="export-icon" /> Export
+        </button>
       </div>
 
       {(loading || nqrLoading) && (
-        <div className="loading-indicator">
-          Loading data...
-        </div>
+        <div className="loading-indicator">Loading data...</div>
       )}
 
       <div className="table-wrapper">
@@ -331,18 +298,18 @@ const RealtimeVoting = ({ id: event_id }) => {
             </tr>
           </thead>
           <tbody>
-            {currentData.length > 0 ? (
-              currentData.map((row, index) => (
-                <tr key={index}>
+            {paginationData.currentData.length > 0 ? (
+              paginationData.currentData.map((row, index) => (
+                <tr key={`${row.createdAt}-${index}`}>
                   <td>{row.name}</td>
                   <td>{row.contestantName}</td>
                   <td>{row.phone}</td>
                   <td>{row.votes}</td>
                   <td>
-                    <span
-                      className="status"
-                      style={{ backgroundColor: row.status.color, color: '#fff' }}
-                    >
+                    <span className="status" style={{ 
+                      backgroundColor: row.status.color, 
+                      color: '#fff' 
+                    }}>
                       {row.status.label}
                     </span>
                   </td>
@@ -371,7 +338,6 @@ const RealtimeVoting = ({ id: event_id }) => {
         </table>
       </div>
 
-      {/* Pagination */}
       {data.length > 0 && (
         <div className="pagination">
           <button
@@ -381,14 +347,12 @@ const RealtimeVoting = ({ id: event_id }) => {
           >
             Prev
           </button>
-
           <span className="page-info">
-            Page {currentPage} of {totalPages}
+            Page {currentPage} of {paginationData.totalPages}
           </span>
-
           <button
             onClick={() => handlePageChange(currentPage + 1)}
-            disabled={currentPage === totalPages || loading}
+            disabled={currentPage === paginationData.totalPages || loading}
             className="pagination-btn"
           >
             Next
@@ -396,27 +360,17 @@ const RealtimeVoting = ({ id: event_id }) => {
         </div>
       )}
 
-      <style>{
-        `@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
-
+      <style jsx>{`
         .table-container {
           font-family: 'Poppins', sans-serif;
           padding: 20px;
         }
-
         .table-header {
           display: flex;
           justify-content: space-between;
           align-items: center;
           margin-bottom: 20px;
         }
-
-        .actions {
-          display: flex;
-          gap: 15px;
-          align-items: center;
-        }
-
         .export-btn {
           padding: 8px 20px;
           border: none;
@@ -430,43 +384,31 @@ const RealtimeVoting = ({ id: event_id }) => {
           gap: 8px;
           font-family: 'Poppins', sans-serif;
         }
-
         .export-btn:disabled {
           background-color: #cccccc;
           cursor: not-allowed;
         }
-
-        .export-icon {
-          font-size: 16px;
-          font-weight: normal;
-        }
-
         .table-wrapper {
           overflow-x: auto;
           -webkit-overflow-scrolling: touch;
         }
-
         table {
           width: 100%;
           border-collapse: collapse;
           text-align: left;
           border: 1px solid #ddd;
           min-width: 800px;
-          font-family: 'Poppins', sans-serif;
         }
-
         th, td {
           padding: 12px;
           text-align: center;
           border-bottom: 1px solid #ddd;
         }
-
         th {
           background-color: #028248;
           font-weight: 600;
           color: #fff;
         }
-
         .pagination {
           margin-top: 20px;
           display: flex;
@@ -474,65 +416,25 @@ const RealtimeVoting = ({ id: event_id }) => {
           align-items: center;
           gap: 10px;
         }
-
-        .pagination-btn {
-          padding: 8px 12px;
-          border: 1px solid #ddd;
-          background: #f5f5f5;
-          border-radius: 4px;
-          cursor: pointer;
-          font-family: 'Poppins', sans-serif;
-        }
-
-        .pagination-btn:disabled {
-          background: #ddd;
-          cursor: not-allowed;
-        }
-
-        .page-info {
-          font-family: 'Poppins', sans-serif;
-          font-size: 14px;
-          color: #333;
-        }
-
         .status {
           padding: 5px 10px;
           border-radius: 5px;
           font-weight: bold;
           font-size: 12px;
         }
-
-        .loading-indicator {
-          padding: 10px;
-          text-align: center;
-          font-style: italic;
-          color: #666;
-        }
-
-        @media screen and (max-width: 768px) {
+        @media (max-width: 768px) {
           .table-container {
             margin-top: -10px;
             padding: 10px;
           }
-
-          .table-header {
-            margin-bottom: 0px;
-          }
-
           table {
             font-size: 14px;
           }
-
           th, td {
             padding: 8px;
           }
-
-          .table-wrapper {
-            overflow-x: auto;
-            -webkit-overflow-scrolling: touch;
-          }
-        }`
-      }</style>
+        }
+      `}</style>
     </div>
   );
 };

@@ -5,6 +5,50 @@ import { useParams } from "react-router-dom";
 import { useToken } from "../../context/TokenContext";
 import { calculateVotes } from "../AmountCalculator";
 
+// API Configuration
+const API_CONFIG = {
+  BASE_URL: "https://auth.zeenopay.com",
+  ENDPOINTS: {
+    EVENTS: "/events/",
+    PAYMENT_INTENTS: "/payments/intents/",
+    QR_INTENTS: "/payments/qr/intents",
+    NQR_TRANSACTIONS: "/payments/qr/transactions/static"
+  },
+  DEFAULT_DATES: {
+    START_DATE: "2025-03-20"
+  }
+};
+
+// API Service
+const apiService = {
+  get: async (endpoint, token, params = {}) => {
+    const url = `${API_CONFIG.BASE_URL}${endpoint}`;
+    const response = await fetch(url, {
+      headers: { 
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      ...(Object.keys(params).length && { params })
+    });
+    if (!response.ok) throw new Error(`API request failed: ${response.status}`);
+    return response.json();
+  },
+
+  post: async (endpoint, token, data = {}) => {
+    const url = `${API_CONFIG.BASE_URL}${endpoint}`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(data)
+    });
+    if (!response.ok) throw new Error(`API request failed: ${response.status}`);
+    return response.json();
+  }
+};
+
 const VoteByCountry = () => {
   const { event_id } = useParams();
   const { token } = useToken();
@@ -14,7 +58,6 @@ const VoteByCountry = () => {
   const [totalVotesGlobal, setTotalVotesGlobal] = useState(0);
   const [paymentInfo, setPaymentInfo] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
-  const [nqrTransactions, setNqrTransactions] = useState([]);
 
   const nepalProcessors = ["ESEWA", "KHALTI", "FONEPAY", "PRABHUPAY", "NQR", "QR"];
   const indiaProcessors = ["PHONEPE"];
@@ -25,194 +68,120 @@ const VoteByCountry = () => {
     try {
       const combined = `${addenda1}-${addenda2}`;
       const hexMatch = combined.match(/vnpr-([a-f0-9]+)/i);
-      if (hexMatch && hexMatch[1]) {
-        return parseInt(hexMatch[1], 16);
-      }
-      return null;
+      return hexMatch?.[1] ? parseInt(hexMatch[1], 16) : null;
     } catch (error) {
       console.error('Error extracting intent_id from NQR:', error);
       return null;
     }
   };
 
-  // Fetch NQR transactions
-  const fetchNQRTransactions = async () => {
-    try {
-      const today = new Date().toISOString().split('T')[0];
-      
-      const response = await fetch('https://auth.zeenopay.com/payments/qr/transactions/static', {
-        method: 'POST',
-        headers: {
-          'accept': 'application/json',
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          'start_date': "2025-03-20",
-          'end_date': today
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch NQR data');
-      }
-
-      const result = await response.json();
-      return result.transactions?.responseBody?.filter(txn => txn.debitStatus === '000') || [];
-    } catch (error) {
-      console.error('Error fetching NQR transactions:', error);
-      return [];
-    }
-  };
-
   useEffect(() => {
-    const fetchEventsData = async () => {
-      try {
-        const response = await fetch(`https://auth.zeenopay.com/events/`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-
-        if (!response.ok) {
-          throw new Error("Failed to fetch events data");
-        }
-
-        const data = await response.json();
-        const event = data.find((event) => event.id === parseInt(event_id));
-
-        if (event) {
-          setPaymentInfo(event.payment_info);
-        }
-      } catch (error) {
-        console.error("Error fetching events data:", error);
-      }
-    };
-
-    const fetchPaymentIntentsData = async () => {
+    const fetchData = async () => {
       try {
         setIsLoading(true);
         
-        // First fetch NQR transactions
-        const nqrTransactions = await fetchNQRTransactions();
-        setNqrTransactions(nqrTransactions);
+        // Fetch all data in parallel
+        const [events, nqrData, regularPayments, qrPayments] = await Promise.all([
+          apiService.get(API_CONFIG.ENDPOINTS.EVENTS, token),
+          apiService.post(
+            API_CONFIG.ENDPOINTS.NQR_TRANSACTIONS, 
+            token, 
+            {
+              'start_date': API_CONFIG.DEFAULT_DATES.START_DATE,
+              'end_date': new Date().toISOString().split('T')[0]
+            }
+          ),
+          apiService.get(API_CONFIG.ENDPOINTS.PAYMENT_INTENTS, token, { event_id }),
+          apiService.get(API_CONFIG.ENDPOINTS.QR_INTENTS, token, { event_id })
+        ]);
 
-        // Fetch regular payment intents
-        const response = await fetch(
-          `https://auth.zeenopay.com/payments/intents/?event_id=${event_id}`,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          }
+        // Set payment info from event data
+        const event = events.find(e => e.id === parseInt(event_id));
+        if (event) setPaymentInfo(event.payment_info);
+
+        // Filter QR payments to exclude NQR
+        const filteredQrPayments = qrPayments.filter(
+          intent => intent.processor?.toUpperCase() === "QR"
         );
 
-        if (!response.ok) {
-          throw new Error("Failed to fetch payment intents data");
-        }
-
-        const data = await response.json();
-
-        // Fetch QR payment intents (only QR, exclude NQR)
-        const qrResponse = await fetch(
-          `https://auth.zeenopay.com/payments/qr/intents?event_id=${event_id}`,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          }
-        );
-
-        if (!qrResponse.ok) {
-          throw new Error("Failed to fetch QR payment intents data");
-        }
-
-        const qrData = await qrResponse.json();
-        
-        // Filter to only include QR processor (exclude NQR)
-        const filteredQrData = qrData.filter(
-          (intent) => intent.processor?.toUpperCase() === "QR"
-        );
-
-        // Combine all payment sources (regular, QR, and NQR)
+        // Combine all payment sources
         const allPaymentIntents = [
-          ...data, 
-          ...filteredQrData,
-          ...nqrTransactions.map(txn => ({
-            intent_id: getIntentIdFromNQR(txn.addenda1, txn.addenda2),
-            amount: txn.amount,
-            processor: 'NQR',
-            status: 'S', // NQR transactions are already filtered for success
-            currency: 'NPR'
-          }))
+          ...regularPayments, 
+          ...filteredQrPayments,
+          ...(nqrData.transactions?.responseBody?.filter(txn => txn.debitStatus === '000') || [])
+            .map(txn => ({
+              intent_id: getIntentIdFromNQR(txn.addenda1, txn.addenda2),
+              amount: txn.amount,
+              processor: 'NQR',
+              status: 'S',
+              currency: 'NPR'
+            }))
         ];
 
-        // Filter payment intents to include only successful transactions (status === 'S')
-        const successfulPaymentIntents = allPaymentIntents.filter(
-          (item) => item.status === 'S'
-        );
-
-        // Process data for Nepal
-        const nepalData = successfulPaymentIntents.filter((item) =>
-          nepalProcessors.includes(item.processor)
-        );
-
-        // Calculate votes for each Nepal processor
-        const nepalVotesData = nepalProcessors.map((processor) => {
-          const processorData = nepalData.filter((item) => item.processor === processor);
-          const totalVotes = processorData.reduce((sum, item) => {
-            return sum + calculateVotes(item.amount, "NPR");
-          }, 0);
-          return totalVotes;
-        });
-
-        const totalNepalVotes = nepalVotesData.reduce((a, b) => a + b, 0);
-        setNepalVotes(nepalVotesData);
-        setTotalVotesNepal(totalNepalVotes);
-
-        // Process data for Global
-        const indiaData = successfulPaymentIntents.filter((item) =>
-          indiaProcessors.includes(item.processor)
-        );
-        const internationalData = successfulPaymentIntents.filter((item) =>
-          internationalProcessors.includes(item.processor)
-        );
-
-        // Calculate votes for India (INR currency)
-        const indiaVotes = indiaData
-          .map((item) => calculateVotes(item.amount, "INR"))
-          .reduce((a, b) => a + b, 0);
-
-        // Calculate votes for International (other currencies)
-        const internationalVotes = internationalData
-          .map((item) => {
-            let currency = "USD";
-            const processor = item.processor?.toUpperCase();
-
-            // Determine the currency based on the processor
-            if (processor === "STRIPE") {
-              currency = item.currency?.toUpperCase() || "USD";
-            } else if (processor === "PAYU") {
-              currency = "INR"; // PAYU uses INR
-            }
-
-            return calculateVotes(item.amount, currency);
-          })
-          .reduce((a, b) => a + b, 0);
-
-        setGlobalVotes([indiaVotes, internationalVotes]);
-        setTotalVotesGlobal(indiaVotes + internationalVotes);
+        // Process data
+        processVotingData(allPaymentIntents);
       } catch (error) {
-        console.error("Error fetching payment intents data:", error);
+        console.error("Error fetching data:", error);
       } finally {
         setIsLoading(false);
       }
     };
 
+    const processVotingData = (paymentIntents) => {
+      // Filter payment intents to include only successful transactions
+      const successfulPaymentIntents = paymentIntents.filter(
+        (item) => item.status === 'S'
+      );
+
+      // Process data for Nepal
+      const nepalData = successfulPaymentIntents.filter((item) =>
+        nepalProcessors.includes(item.processor?.toUpperCase())
+      );
+
+      // Calculate votes for each Nepal processor
+      const nepalVotesData = nepalProcessors.map((processor) => {
+        const processorData = nepalData.filter(
+          (item) => item.processor?.toUpperCase() === processor
+        );
+        return processorData.reduce(
+          (sum, item) => sum + calculateVotes(item.amount, "NPR"), 
+          0
+        );
+      });
+
+      const totalNepalVotes = nepalVotesData.reduce((a, b) => a + b, 0);
+      setNepalVotes(nepalVotesData);
+      setTotalVotesNepal(totalNepalVotes);
+
+      // Process data for Global
+      const indiaData = successfulPaymentIntents.filter((item) =>
+        indiaProcessors.includes(item.processor?.toUpperCase())
+      );
+      const internationalData = successfulPaymentIntents.filter((item) =>
+        internationalProcessors.includes(item.processor?.toUpperCase())
+      );
+
+      // Calculate votes for India (INR currency)
+      const indiaVotes = indiaData
+        .reduce((sum, item) => sum + calculateVotes(item.amount, "INR"), 0);
+
+      // Calculate votes for International (other currencies)
+      const internationalVotes = internationalData
+        .reduce((sum, item) => {
+          const currency = item.processor?.toUpperCase() === "STRIPE" 
+            ? item.currency?.toUpperCase() || "USD" 
+            : "INR";
+          return sum + calculateVotes(item.amount, currency);
+        }, 0);
+
+      setGlobalVotes([indiaVotes, internationalVotes]);
+      setTotalVotesGlobal(indiaVotes + internationalVotes);
+    };
+
     if (token) {
-      fetchEventsData().then(() => fetchPaymentIntentsData());
+      fetchData();
     }
-  }, [event_id, token, paymentInfo]);
+  }, [event_id, token]);
 
   // Update labels for Nepal chart
   const nepalLabels = nepalProcessors.map((processor) => {
@@ -244,8 +213,8 @@ const VoteByCountry = () => {
 
   // Check if there is no data
   const hasNoData = nepalVotes.length === 0 && globalVotes.length === 0;
-  const hasNoNepalVotes = nepalVotes.length === 0 || nepalVotes.every((vote) => vote === 0);
-  const hasNoGlobalVotes = globalVotes.length === 0 || globalVotes.every((vote) => vote === 0);
+  const hasNoNepalVotes = nepalVotes.every((vote) => vote === 0);
+  const hasNoGlobalVotes = globalVotes.every((vote) => vote === 0);
 
   return (
     <div className="chart-container">

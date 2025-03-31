@@ -1,131 +1,80 @@
 import React, { useState, useEffect } from "react";
-import { calculateVotes } from '../AmountCalculator'; 
+import { calculateVotes } from '../AmountCalculator';
+
+// API configuration
+const API_CONFIG = {
+  BASE_URL: "https://auth.zeenopay.com",
+  ENDPOINTS: {
+    CONTESTANTS: "/events/contestants/",
+    PAYMENT_INTENTS: "/payments/intents/",
+    QR_INTENTS: "/payments/qr/intents",
+    NQR_TRANSACTIONS: "/payments/qr/transactions/static"
+  },
+  DEFAULT_AVATAR: "https://via.placeholder.com/40",
+  REFRESH_INTERVAL: 30000 
+};
 
 const Contestant = ({ event_id, token }) => {
   const [candidates, setCandidates] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [paymentInfo, setPaymentInfo] = useState(null);
 
-  // Helper function to extract intent_id from NQR transaction
-  const getIntentIdFromNQR = (addenda1, addenda2) => {
+  // Helper function for API calls
+  const apiCall = async (endpoint, method = 'GET', body = null, signal) => {
     try {
-      const combined = `${addenda1}-${addenda2}`;
-      const hexMatch = combined.match(/vnpr-([a-f0-9]+)/i);
-      return hexMatch?.[1] ? parseInt(hexMatch[1], 16) : null;
-    } catch (error) {
-      console.error('Error extracting intent_id from NQR:', error);
-      return null;
+      const url = `${API_CONFIG.BASE_URL}${endpoint}${method === 'GET' ? `?event_id=${event_id}` : ''}`;
+      const options = {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        signal
+      };
+      if (body) options.body = JSON.stringify(body);
+
+      const response = await fetch(url, options);
+      if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+
+      return await response.json();
+    } catch (err) {
+      if (err.name !== 'AbortError') console.error(`Error fetching ${endpoint}:`, err);
+      throw err;
     }
   };
 
   useEffect(() => {
+    let isMounted = true;
+    const controller = new AbortController();
+    const { signal } = controller;
+
     const fetchData = async () => {
       try {
-        // Fetch event data
-        const eventResponse = await fetch(`https://auth.zeenopay.com/events/`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            Accept: "application/json",
-          },
-        });
-
-        if (!eventResponse.ok) {
-          throw new Error("Failed to fetch event data");
-        }
-
-        const eventData = await eventResponse.json();
-        const event = eventData.find((event) => event.id === parseInt(event_id));
-        if (!event) {
-          throw new Error("Event not found");
-        }
-
-        setPaymentInfo(event.payment_info);
-
-        // Fetch contestants data
-        const contestantsResponse = await fetch(
-          `https://auth.zeenopay.com/events/contestants/?event_id=${event_id}`,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-              Accept: "application/json",
-            },
-          }
-        );
-
-        if (!contestantsResponse.ok) {
-          throw new Error("Failed to fetch contestants data");
-        }
-
-        const contestants = await contestantsResponse.json();
-
-        // Fetch regular payment intents
-        const paymentsResponse = await fetch(
-          `https://auth.zeenopay.com/payments/intents/?event_id=${event_id}`,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-              Accept: "application/json",
-            },
-          }
-        );
-
-        if (!paymentsResponse.ok) {
-          throw new Error("Failed to fetch payment intents data");
-        }
-
-        const paymentIntents = await paymentsResponse.json();
-
-        // Fetch QR payment intents (excluding NQR)
-        const qrPaymentsResponse = await fetch(
-          `https://auth.zeenopay.com/payments/qr/intents?event_id=${event_id}`,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-              Accept: "application/json",
-            },
-          }
-        );
-
-        if (!qrPaymentsResponse.ok) {
-          throw new Error("Failed to fetch QR payment intents data");
-        }
-
-        const qrPaymentIntents = await qrPaymentsResponse.json();
-        const filteredQrPaymentIntents = qrPaymentIntents.filter(
-          (intent) => intent.processor?.toUpperCase() === "QR"
-        );
-
-        // Fetch NQR transactions
         const today = new Date().toISOString().split('T')[0];
-        const nqrResponse = await fetch('https://auth.zeenopay.com/payments/qr/transactions/static', {
-          method: 'POST',
-          headers: {
-            'accept': 'application/json',
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            'start_date': "2025-03-20",
-            'end_date': today
-          })
-        });
 
-        if (!nqrResponse.ok) {
-          throw new Error("Failed to fetch NQR transactions");
-        }
+        const [contestants, paymentIntents, qrPaymentIntents, nqrData] = await Promise.all([
+          apiCall(API_CONFIG.ENDPOINTS.CONTESTANTS, 'GET', null, signal),
+          apiCall(API_CONFIG.ENDPOINTS.PAYMENT_INTENTS, 'GET', null, signal),
+          apiCall(API_CONFIG.ENDPOINTS.QR_INTENTS, 'GET', null, signal),
+          apiCall(API_CONFIG.ENDPOINTS.NQR_TRANSACTIONS, 'POST', { start_date: "2025-03-20", end_date: today }, signal)
+        ]);
 
-        const nqrData = await nqrResponse.json();
-        const successfulNqrTransactions = nqrData.transactions?.responseBody?.filter(
-          txn => txn.debitStatus === '000'
-        ) || [];
+        if (!isMounted) return;
 
-        // Combine all payment sources
-        const allPaymentIntents = [
-          ...paymentIntents,
-          ...filteredQrPaymentIntents,
+        // Process NQR transactions
+        const extractIntentId = (addenda1, addenda2) => {
+          const match = `${addenda1}-${addenda2}`.match(/vnpr-([a-f0-9]+)/i);
+          return match?.[1] ? parseInt(match[1], 16) : null;
+        };
+
+        const successfulNqrTransactions = nqrData.transactions?.responseBody?.filter(txn => txn.debitStatus === '000') || [];
+
+        // Combine all successful payments
+        const successfulPayments = [
+          ...paymentIntents.filter(intent => intent.status === 'S'),
+          ...qrPaymentIntents.filter(intent => intent.status === 'S' && intent.processor?.toUpperCase() === "QR"),
           ...successfulNqrTransactions.map(txn => ({
-            intent_id: getIntentIdFromNQR(txn.addenda1, txn.addenda2),
+            intent_id: extractIntentId(txn.addenda1, txn.addenda2),
             amount: txn.amount,
             currency: 'NPR',
             processor: 'NQR',
@@ -133,73 +82,68 @@ const Contestant = ({ event_id, token }) => {
           }))
         ];
 
-        // Filter successful transactions
-        const successfulPaymentIntents = allPaymentIntents.filter(
-          (intent) => intent.status === 'S'
-        );
-
         // Calculate votes for each contestant
-        const candidatesWithVotes = contestants.map((contestant) => {
-          let totalVotes = 0;
-
-          successfulPaymentIntents.forEach((intent) => {
-            if (intent.intent_id?.toString() === contestant.id.toString()) {
-              let currency = 'USD';
+        const updatedCandidates = contestants.map(contestant => {
+          const totalVotes = successfulPayments
+            .filter(intent => intent.intent_id?.toString() === contestant.id.toString())
+            .reduce((sum, intent) => {
+              let currency = intent.currency?.toUpperCase() || 'USD';
               const processor = intent.processor?.toUpperCase();
 
               if (["ESEWA", "KHALTI", "FONEPAY", "PRABHUPAY", "QR", "NQR"].includes(processor)) {
                 currency = 'NPR';
               } else if (["PHONEPE", "PAYU"].includes(processor)) {
                 currency = 'INR';
-              } else if (processor === "STRIPE") {
-                currency = intent.currency?.toUpperCase() || 'USD';
               }
 
-              totalVotes += calculateVotes(intent.amount, currency);
-            }
-          });
+              return sum + calculateVotes(intent.amount, currency);
+            }, 0);
 
-          return {
-            ...contestant,
-            votes: totalVotes,
-          };
+          return { ...contestant, votes: totalVotes };
         });
 
-        // Sort candidates by votes in descending order and take top 6
-        const sortedCandidates = candidatesWithVotes
-          .sort((a, b) => b.votes - a.votes)
-          .slice(0, 6); 
-
-        setCandidates(sortedCandidates);
-        setLoading(false);
+        // Sort and take top 6
+        setCandidates(updatedCandidates.sort((a, b) => b.votes - a.votes).slice(0, 6));
       } catch (err) {
-        console.error("Error fetching data:", err);
-        setError("Failed to fetch data.");
-        setLoading(false);
+        if (isMounted && err.name !== 'AbortError') {
+          setError("Failed to fetch data. Please try again.");
+        }
+      } finally {
+        if (isMounted) setLoading(false);
       }
     };
 
     fetchData();
+    const interval = setInterval(fetchData, API_CONFIG.REFRESH_INTERVAL);
+
+    return () => {
+      isMounted = false;
+      controller.abort();
+      clearInterval(interval);
+    };
   }, [event_id, token]);
 
-  if (loading) return <p>Loading...</p>;
-  if (error) return <p>{error}</p>;
+  if (loading) return <div className="loading">Loading top candidates...</div>;
+  if (error) return <div className="error">{error}</div>;
 
   return (
     <div className="candidate-card">
-      <h3 className="top-h3">Top - Performing Candidates</h3>
+      <h3 className="top-h3">Top Performing Candidates</h3>
       <ul className="candidate-list">
-        {candidates.map((candidate, index) => (
-          <li key={index} className="candidate-item">
-            <div style={{ display: "flex", alignItems: "center" }}>
+        {candidates.map(candidate => (
+          <li key={candidate.id} className="candidate-item">
+            <div className="candidate-info" style={{ display: "flex", alignItems: "center" }}>
               <img
-                src={candidate.avatar}
-                alt="candidate"
+                src={candidate.avatar || API_CONFIG.DEFAULT_AVATAR}
+                alt={candidate.name}
                 className="candidate-image"
+                loading="lazy"
+                width="40"
+                height="40"
               />
-              {candidate.name}
+              <span className="candidate-name">{candidate.name}</span>
             </div>
-            <span>{candidate.votes.toLocaleString()} Votes</span>
+            <span className="candidate-votes">{candidate.votes.toLocaleString()} Votes</span>
           </li>
         ))}
       </ul>

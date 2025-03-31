@@ -7,6 +7,80 @@ import * as XLSX from "xlsx";
 import CandidateModel from "./CandidateModal";
 import { calculateVotes } from '../AmountCalculator';
 
+// API Configuration
+const API_CONFIG = {
+  BASE_URL: "https://auth.zeenopay.com",
+  ENDPOINTS: {
+    EVENTS: "/events/",
+    CONTESTANTS: "/events/contestants/",
+    PAYMENT_INTENTS: "/payments/intents/",
+    QR_INTENTS: "/payments/qr/intents",
+    NQR_TRANSACTIONS: "/payments/qr/transactions/static"
+  },
+  DEFAULT_DATES: {
+    START_DATE: "2025-03-20"
+  }
+};
+
+// API Service
+const apiService = {
+  get: async (endpoint, token, params = {}) => {
+    const url = `${API_CONFIG.BASE_URL}${endpoint}`;
+    const response = await fetch(url, {
+      headers: { 
+        'Authorization': `Bearer ${token}`,
+        'Accept': 'application/json'
+      },
+      ...(Object.keys(params).length && { params })
+    });
+    if (!response.ok) throw new Error(`API request failed: ${response.status}`);
+    return response.json();
+  },
+
+  post: async (endpoint, token, data = {}) => {
+    const url = `${API_CONFIG.BASE_URL}${endpoint}`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      body: JSON.stringify(data)
+    });
+    if (!response.ok) throw new Error(`API request failed: ${response.status}`);
+    return response.json();
+  },
+
+  put: async (endpoint, token, data = {}) => {
+    const url = `${API_CONFIG.BASE_URL}${endpoint}`;
+    const response = await fetch(url, {
+      method: 'PUT',
+      headers: { 
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      body: JSON.stringify(data)
+    });
+    if (!response.ok) throw new Error(`API request failed: ${response.status}`);
+    return response.json();
+  },
+
+  delete: async (endpoint, token) => {
+    const url = `${API_CONFIG.BASE_URL}${endpoint}`;
+    const response = await fetch(url, {
+      method: 'DELETE',
+      headers: { 
+        'Authorization': `Bearer ${token}`,
+        'Accept': 'application/json'
+      }
+    });
+    if (!response.ok) throw new Error(`API request failed: ${response.status}`);
+    return response.json();
+  }
+};
+
 const CandidateTable = () => {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -42,36 +116,6 @@ const CandidateTable = () => {
     }
   };
 
-  // Fetch NQR transactions
-  const fetchNQRTransactions = async () => {
-    try {
-      const today = new Date().toISOString().split('T')[0];
-      
-      const response = await fetch('https://auth.zeenopay.com/payments/qr/transactions/static', {
-        method: 'POST',
-        headers: {
-          'accept': 'application/json',
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          'start_date': "2025-03-20",
-          'end_date': today
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch NQR data');
-      }
-
-      const result = await response.json();
-      return result.transactions?.responseBody?.filter(txn => txn.debitStatus === '000') || [];
-    } catch (error) {
-      console.error('Error fetching NQR transactions:', error);
-      return [];
-    }
-  };
-
   useEffect(() => {
     const fetchData = async () => {
       if (!event_id) {
@@ -90,87 +134,34 @@ const CandidateTable = () => {
       setError(null);
 
       try {
-        // First fetch NQR transactions
-        const nqrTransactions = await fetchNQRTransactions();
-        setNqrTransactions(nqrTransactions);
+        // Fetch all data in parallel
+        const [events, nqrData, contestants, paymentIntents, qrPaymentIntents] = await Promise.all([
+          apiService.get(API_CONFIG.ENDPOINTS.EVENTS, token),
+          apiService.post(
+            API_CONFIG.ENDPOINTS.NQR_TRANSACTIONS, 
+            token, 
+            {
+              'start_date': API_CONFIG.DEFAULT_DATES.START_DATE,
+              'end_date': new Date().toISOString().split('T')[0]
+            }
+          ),
+          apiService.get(API_CONFIG.ENDPOINTS.CONTESTANTS, token, { event_id }),
+          apiService.get(API_CONFIG.ENDPOINTS.PAYMENT_INTENTS, token, { event_id }),
+          apiService.get(API_CONFIG.ENDPOINTS.QR_INTENTS, token, { event_id })
+        ]);
 
-        // Fetch event data
-        const eventResponse = await fetch(
-          `https://auth.zeenopay.com/events/`,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-              Accept: "application/json",
-            },
-          }
-        );
-
-        if (!eventResponse.ok) {
-          throw new Error("Failed to fetch event data.");
-        }
-
-        const eventData = await eventResponse.json();
-        const event = eventData.find((event) => event.id === parseInt(event_id));
-
-        if (!event) {
-          throw new Error("Event not found.");
-        }
-
+        // Set payment info from event data
+        const event = events.find(e => e.id === parseInt(event_id));
+        if (!event) throw new Error("Event not found");
         setPaymentInfo(event.payment_info);
 
-        // Fetch contestants data
-        const contestantsResponse = await fetch(
-          `https://auth.zeenopay.com/events/contestants/?event_id=${event_id}`,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-              Accept: "application/json",
-            },
-          }
-        );
-
-        if (!contestantsResponse.ok) {
-          throw new Error("Failed to fetch contestants data.");
-        }
-
-        const contestants = await contestantsResponse.json();
-
-        // Fetch regular payment intents
-        const paymentsResponse = await fetch(
-          `https://auth.zeenopay.com/payments/intents/?event_id=${event_id}`,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-              Accept: "application/json",
-            },
-          }
-        );
-
-        if (!paymentsResponse.ok) {
-          throw new Error("Failed to fetch payment intents data.");
-        }
-
-        const paymentIntents = await paymentsResponse.json();
-
-        // Fetch QR payment intents (excluding NQR)
-        const qrPaymentsResponse = await fetch(
-          `https://auth.zeenopay.com/payments/qr/intents?event_id=${event_id}`,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-              Accept: "application/json",
-            },
-          }
-        );
-
-        if (!qrPaymentsResponse.ok) {
-          throw new Error("Failed to fetch QR payment intents data.");
-        }
-
-        const qrPaymentIntents = await qrPaymentsResponse.json();
+        // Filter QR payments to exclude NQR
         const filteredQrPaymentIntents = qrPaymentIntents.filter(
-          (intent) => intent.processor?.toUpperCase() === "QR"
+          intent => intent.processor?.toUpperCase() === "QR"
         );
+
+        // Set NQR transactions
+        setNqrTransactions(nqrData.transactions?.responseBody?.filter(txn => txn.debitStatus === '000') || []);
 
         // Combine all payment sources
         const allPaymentIntents = [
@@ -278,22 +269,11 @@ const CandidateTable = () => {
 
   const handleUpdateCandidate = async (updatedCandidate) => {
     try {
-      const response = await fetch(
-        `https://auth.zeenopay.com/events/contestants/${updatedCandidate.id}/`,
-        {
-          method: "PUT",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-            Accept: "application/json",
-          },
-          body: JSON.stringify(updatedCandidate),
-        }
+      await apiService.put(
+        `${API_CONFIG.ENDPOINTS.CONTESTANTS}${updatedCandidate.id}/`,
+        token,
+        updatedCandidate
       );
-
-      if (!response.ok) {
-        throw new Error("Failed to update candidate. Please try again.");
-      }
 
       const updatedData = data.map((candidate) =>
         candidate.id === updatedCandidate.id ? updatedCandidate : candidate
@@ -310,20 +290,10 @@ const CandidateTable = () => {
     if (!window.confirm("Are you sure you want to delete this candidate?")) return;
 
     try {
-      const response = await fetch(
-        `https://auth.zeenopay.com/events/contestants/${id}/`,
-        {
-          method: "DELETE",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            Accept: "application/json",
-          },
-        }
+      await apiService.delete(
+        `${API_CONFIG.ENDPOINTS.CONTESTANTS}${id}/`,
+        token
       );
-
-      if (!response.ok) {
-        throw new Error("Failed to delete candidate. Please try again.");
-      }
 
       setData(data.filter((candidate) => candidate.id !== id));
       alert("Candidate deleted successfully.");

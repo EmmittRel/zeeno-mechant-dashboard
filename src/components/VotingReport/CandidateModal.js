@@ -6,6 +6,19 @@ import { FaEdit } from "react-icons/fa";
 import useS3Upload from "../../hooks/useS3Upload";
 import { calculateVotes } from '../AmountCalculator';
 
+// Base API configuration
+const API_CONFIG = {
+  BASE_URL: "https://auth.zeenopay.com",
+  ENDPOINTS: {
+    PAYMENT_INTENTS: "/payments/intents",
+    QR_INTENTS: "/payments/qr/intents",
+    NQR_TRANSACTIONS: "/payments/qr/transactions/static"
+  },
+  DEFAULT_HEADERS: {
+    "Content-Type": "application/json"
+  }
+};
+
 const CandidateModel = ({ 
   visible, 
   onClose, 
@@ -22,8 +35,24 @@ const CandidateModel = ({
   const [voterError, setVoterError] = useState(null);
   const [selectedFile, setSelectedFile] = useState(null);
   const [uploadProgress, setUploadProgress] = useState(0);
-  
   const { uploadFile } = useS3Upload();
+
+  // API call helper function
+  const apiCall = async (endpoint, method = 'GET', body = null) => {
+    const url = `${API_CONFIG.BASE_URL}${endpoint}`;
+    const options = {
+      method,
+      headers: {
+        ...API_CONFIG.DEFAULT_HEADERS,
+        'Authorization': `Bearer ${token}`
+      }
+    };
+    if (body) options.body = JSON.stringify(body);
+    
+    const response = await fetch(url, options);
+    if (!response.ok) throw new Error(`API request failed: ${response.status}`);
+    return response.json();
+  };
 
   useEffect(() => {
     setFormData(candidate || {});
@@ -35,12 +64,9 @@ const CandidateModel = ({
   const extractIntentIdFromNQR = (addenda1, addenda2) => {
     try {
       if (!addenda1 || !addenda2) return null;
-
       const combined = `${addenda1}-${addenda2}`;
       const hexMatch = combined.match(/vnpr-([a-f0-9]+)/i);
-      if (!hexMatch || !hexMatch[1]) return null;
-
-      return parseInt(hexMatch[1], 16);
+      return hexMatch?.[1] ? parseInt(hexMatch[1], 16) : null;
     } catch (error) {
       return null;
     }
@@ -51,24 +77,15 @@ const CandidateModel = ({
     
     try {
       const today = new Date().toISOString().split('T')[0];
-      const response = await fetch(
-        'https://auth.zeenopay.com/payments/qr/transactions/static',
+      const data = await apiCall(
+        API_CONFIG.ENDPOINTS.NQR_TRANSACTIONS,
+        'POST',
         {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            'start_date': '2025-03-20',
-            'end_date': today
-          })
+          'start_date': '2025-03-20',
+          'end_date': today
         }
       );
 
-      if (!response.ok) return [];
-      
-      const data = await response.json();
       const transactions = data.transactions?.responseBody || [];
       const processedData = [];
 
@@ -100,38 +117,24 @@ const CandidateModel = ({
 
   const fetchRegularPayments = async (contestantId) => {
     try {
-      // Fetch regular payment intents
-      const paymentsResponse = await fetch(
-        `https://auth.zeenopay.com/payments/intents/`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      if (!paymentsResponse.ok) throw new Error("Failed to fetch payment intents");
-      const paymentIntents = await paymentsResponse.json();
+      const [paymentIntents, qrPaymentIntents] = await Promise.all([
+        apiCall(API_CONFIG.ENDPOINTS.PAYMENT_INTENTS),
+        apiCall(API_CONFIG.ENDPOINTS.QR_INTENTS)
+      ]);
 
-      // Fetch QR payment intents (excluding NQR)
-      const qrPaymentsResponse = await fetch(
-        `https://auth.zeenopay.com/payments/qr/intents`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      if (!qrPaymentsResponse.ok) throw new Error("Failed to fetch QR payment intents");
-      const qrPaymentIntents = await qrPaymentsResponse.json();
-      
       const filteredQrIntents = qrPaymentIntents.filter(
         (intent) => intent.processor?.toUpperCase() === "QR"
       );
 
-      // Combine payment intents
       const allPaymentIntents = [...paymentIntents, ...filteredQrIntents];
       const successfulPaymentIntents = allPaymentIntents.filter(
         (intent) => intent.status === "S"
       );
 
-      // Match intents with candidate
       const matchedIntents = successfulPaymentIntents.filter(
         (intent) => String(intent.intent_id) === String(contestantId) && intent.intent === "V"
       );
 
-      // Prepare voter lists
       const voterList = matchedIntents.map((intent) => {
         let currency = "USD";
         const processor = intent.processor?.toUpperCase();
@@ -222,6 +225,17 @@ const CandidateModel = ({
     }
   };
 
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    setFormData((prevData) => ({ ...prevData, [name]: value }));
+  };
+
+  const handleOverlayClick = (e) => {
+    if (e.target === e.currentTarget) onClose();
+  };
+
+  const handleModalContainerClick = (e) => e.stopPropagation();
+
   const totalVotes = voterDetails.reduce((sum, voter) => sum + voter.votes, 0);
 
   const getProcessorColor = (processor) => {
@@ -269,17 +283,6 @@ const CandidateModel = ({
     XLSX.utils.book_append_sheet(workbook, worksheet, "Voting Details");
     XLSX.writeFile(workbook, "voting_details.xlsx");
   };
-
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setFormData((prevData) => ({ ...prevData, [name]: value }));
-  };
-
-  const handleOverlayClick = (e) => {
-    if (e.target === e.currentTarget) onClose();
-  };
-
-  const handleModalContainerClick = (e) => e.stopPropagation();
 
   if (!visible) return null;
 
@@ -437,321 +440,320 @@ const CandidateModel = ({
       </div>
 
       <style>{`
-  /* Import Poppins font from Google Fonts */
-  @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap');
+        /* Import Poppins font from Google Fonts */
+        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap');
 
-  /* Modal Overlay */
-  .modal-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0, 0, 0, 0.5);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    z-index: 1000;
-    animation: fadeIn 0.3s ease;
-    font-family: 'Poppins', sans-serif;
-    padding: 16px;
-    box-sizing: border-box;
-  }
+        /* Modal Overlay */
+        .modal-overlay {
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          background: rgba(0, 0, 0, 0.5);
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          z-index: 1000;
+          animation: fadeIn 0.3s ease;
+          font-family: 'Poppins', sans-serif;
+          padding: 16px;
+          box-sizing: border-box;
+        }
 
-  /* Modal Container */
-  .modal-container {
-    background: #fff;
-    border-radius: 8px;
-    width: calc(100% - 32px);
-    max-width: 600px;
-    max-height: 90vh;
-    padding: 20px;
-    position: relative;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    animation: slideIn 0.3s ease;
-    overflow-y: auto;
-    font-family: 'Poppins', sans-serif;
-    box-sizing: border-box;
-  }
+        /* Modal Container */
+        .modal-container {
+          background: #fff;
+          border-radius: 8px;
+          width: calc(100% - 32px);
+          max-width: 600px;
+          max-height: 90vh;
+          padding: 20px;
+          position: relative;
+          box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+          animation: slideIn 0.3s ease;
+          overflow-y: auto;
+          font-family: 'Poppins', sans-serif;
+          box-sizing: border-box;
+        }
 
-  /* Close Button */
-  .modal-close-btn {
-    position: absolute;
-    top: 10px;
-    right: 10px;
-    background: none;
-    border: none;
-    font-size: 1.5rem;
-    color: #333;
-    cursor: pointer;
-    transition: color 0.2s ease;
-  }
+        /* Close Button */
+        .modal-close-btn {
+          position: absolute;
+          top: 10px;
+          right: 10px;
+          background: none;
+          border: none;
+          font-size: 1.5rem;
+          color: #333;
+          cursor: pointer;
+          transition: color 0.2s ease;
+        }
 
-  .modal-close-btn:hover {
-    color: #e74c3c;
-  }
+        .modal-close-btn:hover {
+          color: #e74c3c;
+        }
 
-  /* Modal Title */
-  .modal-title {
-    margin-top: 0;
-    font-size: 1.5rem;
-    color: #333;
-    text-align: center;
-  }
+        /* Modal Title */
+        .modal-title {
+          margin-top: 0;
+          font-size: 1.5rem;
+          color: #333;
+          text-align: center;
+        }
 
-  /* Candidate Avatar Styling */
-  .candidate-avatar {
-    position: relative;
-    width: 120px;
-    height: 120px;
-    border-radius: 15px;
-    overflow: hidden;
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
-    border: 3px solid #fff;
-    margin: 0 auto 20px;
-  }
+        /* Candidate Avatar Styling */
+        .candidate-avatar {
+          position: relative;
+          width: 120px;
+          height: 120px;
+          border-radius: 15px;
+          overflow: hidden;
+          box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+          border: 3px solid #fff;
+          margin: 0 auto 20px;
+        }
 
-  .candidate-avatar-edit {
-    position: relative;
-    width: 120px;
-    height: 120px;
-    border-radius: 15px;
-    overflow: hidden;
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
-    border: 3px solid #fff;
-    margin: 0 0 20px;
-  }
+        .candidate-avatar-edit {
+          position: relative;
+          width: 120px;
+          height: 120px;
+          border-radius: 15px;
+          overflow: hidden;
+          box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+          border: 3px solid #fff;
+          margin: 0 0 20px;
+        }
 
-  .candidate-photo {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: block;
-    transition: transform 0.3s ease;
-  }
+        .candidate-photo {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          display: block;
+          transition: transform 0.3s ease;
+        }
 
-  .candidate-avatar:hover .candidate-photo {
-    transform: scale(1.1);
-  }
+        .candidate-avatar:hover .candidate-photo {
+          transform: scale(1.1);
+        }
 
-  .edit-avatar-overlay {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background-color: rgba(0, 0, 0, 0.5);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    opacity: 0;
-    transition: opacity 0.3s ease;
-  }
+        .edit-avatar-overlay {
+          position: absolute;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          background-color: rgba(0, 0, 0, 0.5);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          opacity: 0;
+          transition: opacity 0.3s ease;
+        }
 
-  .candidate-avatar:hover .edit-avatar-overlay {
-    opacity: 1;
-  }
+        .candidate-avatar:hover .edit-avatar-overlay {
+          opacity: 1;
+        }
 
-  .edit-avatar-icon {
-    color: #fff;
-    font-size: 24px;
-    cursor: pointer;
-  }
+        .edit-avatar-icon {
+          color: #fff;
+          font-size: 24px;
+          cursor: pointer;
+        }
 
-  /* Candidate Details */
-  .candidate-details {
-    text-align: center;
-  }
+        /* Candidate Details */
+        .candidate-details {
+          text-align: center;
+        }
 
-  .candidate-details p {
-    margin: 10px 0;
-  }
+        .candidate-details p {
+          margin: 10px 0;
+        }
 
-  /* Voting Information Header */
-  .voting-info-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
+        /* Voting Information Header */
+        .voting-info-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
 
-  /* Table Wrapper */
-  .table-wrapper {
-    max-height: 200px;
-    border: 1px solid #ddd;
-    border-radius: 8px;
-  }
+        /* Table Wrapper */
+        .table-wrapper {
+          max-height: 200px;
+          border: 1px solid #ddd;
+          border-radius: 8px;
+        }
 
-  /* Table Header Wrapper */
-  .table-header-wrapper {
-    position: sticky;
-    top: 0;
-    z-index: 2;
-    background-color: #028248;
-  }
+        /* Table Header Wrapper */
+        .table-header-wrapper {
+          position: sticky;
+          top: 0;
+          z-index: 2;
+          background-color: #028248;
+        }
 
+        /* Submit Button */
+        .submit-btn {
+          background: #028248;
+          color: white;
+          border: none;
+          padding: 10px 20px;
+          border-radius: 6px;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          cursor: pointer;
+          transition: background 0.3s ease;
+          margin-top: 10px;
+        }
 
-  /* Submit Button */
-  .submit-btn {
-    background: #028248;
-    color: white;
-    border: none;
-    padding: 10px 20px;
-    border-radius: 6px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    cursor: pointer;
-    transition: background 0.3s ease;
-    margin-top: 10px;
-  }
+        .submit-btn:hover {
+          background: rgb(59, 177, 124);
+        }
 
-  .submit-btn:hover {
-    background: rgb(59, 177, 124);
-  }
+        /* Export Button */
+        .export-btn {
+          background: #028248;
+          color: #fff;
+          border: "none",
+          padding: "6px 10px",
+          borderRadius: "4px",
+          cursor: "pointer",
+          fontSize: "14px",
+        }
 
-  /* Export Button */
-  .export-btn {
-    background: #028248;
-    color: #fff;
-    border: "none",
-    padding: "6px 10px",
-    borderRadius: "4px",
-    cursor: "pointer",
-    fontSize: "14px",
-  }
+        .export-btn:hover {
+          background: #016138;
+        }
 
-  .export-btn:hover {
-    background: #016138;
-  }
+        /* Status Badges */
+        .status-badge {
+          padding: 4px 8px;
+          border-radius: 4px;
+          font-size: 12px;
+          font-weight: bold;
+        }
 
-  /* Status Badges */
-  .status-badge {
-    padding: 4px 8px;
-    border-radius: 4px;
-    font-size: 12px;
-    font-weight: bold;
-  }
+        .status-ongoing {
+          background-color: #28a745;
+          color: #fff;
+        }
 
-  .status-ongoing {
-    background-color: #28a745;
-    color: #fff;
-  }
+        .status-eliminated {
+          background-color: #dc3545;
+          color: #fff;
+        }
 
-  .status-eliminated {
-    background-color: #dc3545;
-    color: #fff;
-  }
+        .status-hidden {
+          background-color: #6c757d;
+          color: #fff;
+        }
 
-  .status-hidden {
-    background-color: #6c757d;
-    color: #fff;
-  }
+        .status-closed {
+          background-color: #ffc107;
+          color: #000;
+        }
 
-  .status-closed {
-    background-color: #ffc107;
-    color: #000;
-  }
+        /* Animations */
+        @keyframes fadeIn {
+          from {
+            opacity: 0;
+          }
+          to {
+            opacity: 1;
+          }
+        }
 
-  /* Animations */
-  @keyframes fadeIn {
-    from {
-      opacity: 0;
-    }
-    to {
-      opacity: 1;
-    }
-  }
+        @keyframes slideIn {
+          from {
+            transform: translateY(-20px);
+          }
+          to {
+            transform: translateY(0);
+          }
+        }
 
-  @keyframes slideIn {
-    from {
-      transform: translateY(-20px);
-    }
-    to {
-      transform: translateY(0);
-    }
-  }
+        /* Custom Dropdown Styling */
+        .custom-dropdown {
+          position: relative;
+          width: 100%;
+          border: 1px solid #ccc;
+          border-radius: 8px;
+          background-color: #fff;
+          overflow: hidden;
+          transition: border-color 0.3s ease;
+        }
 
-  /* Custom Dropdown Styling */
-  .custom-dropdown {
-    position: relative;
-    width: 100%;
-    border: 1px solid #ccc;
-    border-radius: 8px;
-    background-color: #fff;
-    overflow: hidden;
-    transition: border-color 0.3s ease;
-  }
+        .custom-dropdown:hover {
+          border-color: #5433ff;
+        }
 
-  .custom-dropdown:hover {
-    border-color: #5433ff;
-  }
+        .custom-dropdown select {
+          width: 100%;
+          padding: 10px 12px;
+          font-size: 14px;
+          border: none;
+          outline: none;
+          background-color: transparent;
+          appearance: none;
+          cursor: pointer;
+        }
 
-  .custom-dropdown select {
-    width: 100%;
-    padding: 10px 12px;
-    font-size: 14px;
-    border: none;
-    outline: none;
-    background-color: transparent;
-    appearance: none;
-    cursor: pointer;
-  }
+        .custom-dropdown .dropdown-arrow {
+          position: absolute;
+          top: 50%;
+          right: 12px;
+          transform: translateY(-50%);
+          pointer-events: none;
+          color: #5433ff;
+          font-size: 12px;
+        }
 
-  .custom-dropdown .dropdown-arrow {
-    position: absolute;
-    top: 50%;
-    right: 12px;
-    transform: translateY(-50%);
-    pointer-events: none;
-    color: #5433ff;
-    font-size: 12px;
-  }
+        /* Styling for options */
+        .custom-dropdown select option {
+          padding: 10px;
+          background-color: #fff;
+          color: #333;
+        }
 
-  /* Styling for options */
-  .custom-dropdown select option {
-    padding: 10px;
-    background-color: #fff;
-    color: #333;
-  }
+        .custom-dropdown select option:hover {
+          background-color: #f0f0f0;
+        }
 
-  .custom-dropdown select option:hover {
-    background-color: #f0f0f0;
-  }
+        /* Media Queries for Mobile Responsiveness */
+        @media (max-width: 768px) {
+          .modal-container {
+            width: calc(100% - 32px);
+            max-height: 60vh;
+            padding: 16px;
+          }
 
-  /* Media Queries for Mobile Responsiveness */
-  @media (max-width: 768px) {
-    .modal-container {
-      width: calc(100% - 32px);
-      max-height: 60vh;
-      padding: 16px;
-    }
+          .modal-title {
+            font-size: 1.2rem;
+          }
 
-    .modal-title {
-      font-size: 1.2rem;
-    }
+          .candidate-avatar,
+          .candidate-avatar-edit {
+            width: 100px;
+            height: 100px;
+          }
 
-    .candidate-avatar,
-    .candidate-avatar-edit {
-      width: 100px;
-      height: 100px;
-    }
+          .candidate-details p {
+            font-size: 14px;
+          }
 
-    .candidate-details p {
-      font-size: 14px;
-    }
+          .voters-table th,
+          .voters-table td {
+            font-size: 12px;
+          }
 
-    .voters-table th,
-    .voters-table td {
-      font-size: 12px;
-    }
-
-    .submit-btn,
-    .export-btn {
-      padding: 8px 16px;
-      font-size: 12px;
-    }
-  }
-`}</style>
+          .submit-btn,
+          .export-btn {
+            padding: 8px 16px;
+            font-size: 12px;
+          }
+        }
+      `}</style>
     </div>
   );
 };

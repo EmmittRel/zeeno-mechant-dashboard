@@ -1,87 +1,113 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { useParams } from "react-router-dom";
 import { useToken } from "../../context/TokenContext";
 import { calculateVotes } from '../AmountCalculator';
 
-const usePaymentProcessor = (token, event_id) => {
+// API Service Configuration
+const API_CONFIG = {
+  BASE_URL: "https://auth.zeenopay.com",
+  ENDPOINTS: {
+    CONTESTANTS: "/events/contestants/",
+    PAYMENT_INTENTS: "/payments/intents/",
+    QR_INTENTS: "/payments/qr/intents",
+    NQR_TRANSACTIONS: "/payments/qr/transactions/static"
+  },
+  IMAGES: {
+    TOTAL_VOTES: "https://i.ibb.co/SwHs5b7g/IMG-2417.png",
+    TOP_PERFORMER: "https://i.ibb.co/by04tPM/IMG-2418.png"
+  },
+  REFRESH_INTERVAL: 30000, 
+  DEFAULT_DATES: {
+    START_DATE: "2025-03-20"
+  }
+};
+
+// Reusable API service
+const apiService = {
+  fetch: async (endpoint, token, options = {}) => {
+    const url = `${API_CONFIG.BASE_URL}${endpoint}`;
+    const response = await fetch(url, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+        ...options.headers
+      }
+    });
+    if (!response.ok) throw new Error(`API request failed: ${response.status}`);
+    return response.json();
+  },
+
+  getContestants: (eventId, token) => {
+    return apiService.fetch(`${API_CONFIG.ENDPOINTS.CONTESTANTS}?event_id=${eventId}`, token);
+  },
+
+  getPaymentIntents: (eventId, token) => {
+    return apiService.fetch(`${API_CONFIG.ENDPOINTS.PAYMENT_INTENTS}?event_id=${eventId}`, token);
+  },
+
+  getQrIntents: (eventId, token) => {
+    return apiService.fetch(`${API_CONFIG.ENDPOINTS.QR_INTENTS}?event_id=${eventId}`, token);
+  },
+
+  getNqrTransactions: (token, endDate) => {
+    return apiService.fetch(API_CONFIG.ENDPOINTS.NQR_TRANSACTIONS, token, {
+      method: 'POST',
+      body: JSON.stringify({
+        'start_date': API_CONFIG.DEFAULT_DATES.START_DATE,
+        'end_date': endDate
+      })
+    });
+  }
+};
+
+const VotingCardComponent = () => {
+  const { token } = useToken();
+  const { event_id } = useParams();
+  const [data, setData] = useState({
+    contestants: [],
+    paymentIntents: [],
+    qrIntents: [],
+    nqrTransactions: []
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [contestants, setContestants] = useState([]);
-  const [paymentIntents, setPaymentIntents] = useState([]);
-  const [qrIntents, setQrIntents] = useState([]);
-  const [nqrTransactions, setNqrTransactions] = useState([]);
 
-  // Helper function to extract intent_id from NQR transaction
-  const getIntentIdFromNQR = (addenda1, addenda2) => {
-    try {
-      const combined = `${addenda1}-${addenda2}`;
-      const hexMatch = combined.match(/vnpr-([a-f0-9]+)/i);
-      return hexMatch?.[1] ? parseInt(hexMatch[1], 16) : null;
-    } catch (error) {
-      console.error('Error extracting intent_id from NQR:', error);
-      return null;
-    }
-  };
-
-  // Fetch all necessary data
   const fetchData = async () => {
     setLoading(true);
-    setError(null);
-
     try {
-      // Fetch contestants
-      const contestantsRes = await fetch(
-        `https://auth.zeenopay.com/events/contestants/?event_id=${event_id}`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      if (!contestantsRes.ok) throw new Error("Failed to fetch contestants");
-      const contestantsData = await contestantsRes.json();
-      setContestants(contestantsData);
-
-      // Fetch regular payment intents
-      const paymentsRes = await fetch(
-        `https://auth.zeenopay.com/payments/intents/?event_id=${event_id}`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      if (!paymentsRes.ok) throw new Error("Failed to fetch payment intents");
-      setPaymentIntents(await paymentsRes.json());
-
-      // Fetch QR payment intents (excluding NQR)
-      const qrPaymentsRes = await fetch(
-        `https://auth.zeenopay.com/payments/qr/intents?event_id=${event_id}`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      if (!qrPaymentsRes.ok) throw new Error("Failed to fetch QR intents");
-      const qrIntentsData = await qrPaymentsRes.json();
-      setQrIntents(qrIntentsData.filter(intent => intent.processor?.toUpperCase() === 'QR'));
-
-      // Fetch NQR transactions
       const today = new Date().toISOString().split('T')[0];
-      const nqrRes = await fetch('https://auth.zeenopay.com/payments/qr/transactions/static', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          'start_date': "2025-03-20",
-          'end_date': today
-        })
+      
+      const [contestantsData, paymentIntents, qrIntentsData, nqrData] = await Promise.all([
+        apiService.getContestants(event_id, token),
+        apiService.getPaymentIntents(event_id, token),
+        apiService.getQrIntents(event_id, token),
+        apiService.getNqrTransactions(token, today)
+      ]);
+
+      setData({
+        contestants: contestantsData,
+        paymentIntents,
+        qrIntents: qrIntentsData.filter(intent => intent.processor?.toUpperCase() === 'QR'),
+        nqrTransactions: nqrData.transactions?.responseBody?.filter(txn => txn.debitStatus === '000') || []
       });
-      if (!nqrRes.ok) throw new Error("Failed to fetch NQR transactions");
-      const nqrData = await nqrRes.json();
-      setNqrTransactions(nqrData.transactions?.responseBody?.filter(txn => txn.debitStatus === '000') || []);
 
     } catch (err) {
-      console.error("Error fetching data:", err);
-      setError(err.message);
+      setError(err.message || "Failed to fetch data");
     } finally {
       setLoading(false);
     }
   };
 
-  // Calculate votes for all contestants
-  const calculateAllVotes = () => {
+  const voteData = useMemo(() => {
+    const { contestants, paymentIntents, qrIntents, nqrTransactions } = data;
+
+    const getIntentIdFromNQR = (addenda1, addenda2) => {
+      const combined = `${addenda1}-${addenda2}`;
+      const hexMatch = combined.match(/vnpr-([a-f0-9]+)/i);
+      return hexMatch?.[1] ? parseInt(hexMatch[1], 16) : null;
+    };
+
     const successfulIntents = [
       ...paymentIntents.filter(intent => intent.status === 'S'),
       ...qrIntents.filter(intent => intent.status === 'S'),
@@ -94,11 +120,10 @@ const usePaymentProcessor = (token, event_id) => {
       }))
     ];
 
-    return contestants.map(contestant => {
-      let votes = 0;
-
-      successfulIntents.forEach(intent => {
-        if (intent.intent_id?.toString() === contestant.id.toString()) {
+    const contestantsWithVotes = contestants.map(contestant => {
+      const votes = successfulIntents
+        .filter(intent => intent.intent_id?.toString() === contestant.id.toString())
+        .reduce((sum, intent) => {
           let currency = 'USD';
           const processor = intent.processor?.toUpperCase();
 
@@ -110,110 +135,73 @@ const usePaymentProcessor = (token, event_id) => {
             currency = intent.currency?.toUpperCase() || 'USD';
           }
 
-          votes += calculateVotes(intent.amount, currency);
-        }
-      });
+          return sum + calculateVotes(intent.amount, currency);
+        }, 0);
 
       return { ...contestant, votes };
     });
-  };
+
+    const totalVotes = contestantsWithVotes.reduce((sum, c) => sum + c.votes, 0);
+    const sorted = [...contestantsWithVotes].sort((a, b) => b.votes - a.votes);
+    
+    return {
+      totalVotes,
+      topPerformer: sorted[0],
+      contestants: contestantsWithVotes
+    };
+  }, [data]);
 
   useEffect(() => {
     fetchData();
+    const interval = setInterval(fetchData, API_CONFIG.REFRESH_INTERVAL);
+    return () => clearInterval(interval);
   }, [token, event_id]);
 
-  return {
-    loading,
-    error,
-    contestants,
-    refresh: fetchData,
-    calculateAllVotes,
-  };
-};
-
-const VotingCardComponent = () => {
-  const { token } = useToken();
-  const { event_id } = useParams();
-  const [totalVotes, setTotalVotes] = useState(null);
-  const [topPerformer, setTopPerformer] = useState(null);
-  const [eventData, setEventData] = useState(null);
-
-  const { loading, error, calculateAllVotes, refresh } = usePaymentProcessor(token, event_id);
-
-  // Card schema
-  const cardSchema = {
-    totalVotes: {
-      image: "https://i.ibb.co/SwHs5b7g/IMG-2417.png",
+  const cards = [
+    {
+      image: API_CONFIG.IMAGES.TOTAL_VOTES,
       title: "Total Votes",
-      value: totalVotes !== null ? totalVotes.toLocaleString() : "Loading...",
+      value: voteData.totalVotes.toLocaleString(),
       subtext: (
         <div className="live-container">
           <span className="live-dot"></span>
           <span className="live-text">Live</span>
         </div>
       ),
-      subtextColor: totalVotes !== null && totalVotes > 0 ? "green" : "red",
+      subtextColor: voteData.totalVotes > 0 ? "green" : "red",
     },
-    topPerformer: {
-      image: "https://i.ibb.co/by04tPM/IMG-2418.png",
+    {
+      image: API_CONFIG.IMAGES.TOP_PERFORMER,
       title: "Top Performer",
-      value: topPerformer ? topPerformer.name : "Loading...",
-      subtext: topPerformer?.votes !== undefined ? 
-        `${topPerformer.votes.toLocaleString()} Votes` : "Data will be available soon",
+      value: voteData.topPerformer ? voteData.topPerformer.name : "No data",
+      subtext: voteData.topPerformer?.votes !== undefined ? 
+        `${voteData.topPerformer.votes.toLocaleString()} Votes` : "No votes yet",
       subtextColor: "green",
-    },
-  };
+    }
+  ];
 
-  const cards = Object.values(cardSchema);
-
-  // Fetch event data
-  useEffect(() => {
-    const fetchEventData = async () => {
-      try {
-        const response = await fetch(`https://auth.zeenopay.com/events/${event_id}/`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!response.ok) throw new Error("Failed to fetch event data");
-        setEventData(await response.json());
-      } catch (error) {
-        console.error("Error fetching event data:", error);
-      }
-    };
-    fetchEventData();
-  }, [token, event_id]);
-
-  // Calculate and update votes periodically
-  useEffect(() => {
-    const updateVotes = () => {
-      if (loading) return;
-      
-      const candidatesWithVotes = calculateAllVotes();
-      const total = candidatesWithVotes.reduce((sum, c) => sum + c.votes, 0);
-      const sorted = [...candidatesWithVotes].sort((a, b) => b.votes - a.votes);
-      
-      setTotalVotes(total);
-      setTopPerformer(sorted[0]);
-    };
-
-    updateVotes();
-    const interval = setInterval(updateVotes, 30000);
-    return () => clearInterval(interval);
-  }, [loading, calculateAllVotes]);
-
-  if (loading) return <p>Loading...</p>;
-  if (error) return <p>Error: {error}</p>;
+  if (loading) return <div className="loading">Loading voting data...</div>;
+  if (error) return <div className="error">Error: {error}</div>;
 
   return (
     <div className="cards-container">
       <link
         href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap"
         rel="stylesheet"
+        crossOrigin="anonymous"
       />
       {cards.map((card, index) => (
         <div key={index} className="card">
           <div className="card-row">
             <div className="card-icon">
-              <img src={card.image} alt={card.title} className="icon-img" />
+              <img 
+                src={card.image} 
+                alt={card.title} 
+                className="icon-img" 
+                loading="lazy"
+                width="30"
+                height="30"
+              />
             </div>
             <div className="card-content">
               <h4 className="card-title">{card.title}</h4>
@@ -227,7 +215,7 @@ const VotingCardComponent = () => {
       ))}
       <hr className="horizontal-line" />
 
-      <style>{`
+      <style jsx>{`
         .cards-container {
           display: flex;
           flex-wrap: wrap;
@@ -336,6 +324,14 @@ const VotingCardComponent = () => {
         @keyframes cardAppear {
           0% { transform: translateY(20px); opacity: 0; }
           100% { transform: translateY(0); opacity: 1; }
+        }
+        .loading, .error {
+          padding: 20px;
+          text-align: center;
+          font-family: 'Poppins', sans-serif;
+        }
+        .error {
+          color: #dc3545;
         }
         @media (max-width: 768px) {
           .cards-container {
