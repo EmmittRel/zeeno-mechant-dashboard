@@ -377,7 +377,7 @@ const VotingData = () => {
               padding-bottom: 0;
             }
             .chart-header h1 {
-              font-size: 1.2rem;
+              font-size: 18px;
             }
             .date-display {
               display: none;

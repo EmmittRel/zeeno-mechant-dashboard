@@ -347,7 +347,7 @@ const Contestant = ({ event_id, token }) => {
           }
           
           .top-h3 {
-            font-size: 1.2rem;
+            font-size: 1.1rem;
             margin-bottom: 20px;
             color: #333;
             font-weight: 600;

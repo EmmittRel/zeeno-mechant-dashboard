@@ -276,7 +276,7 @@ const RealtimeVoting = ({ id: event_id }) => {
   return (
     <div className="table-container">
       <div className="table-header">
-        <h3>Realtime Voting Data</h3>
+        <div className="top-h3">Realtime Voting Data</div>
         <button 
           className="export-btn" 
           onClick={handleExport} 
@@ -436,7 +436,7 @@ const RealtimeVoting = ({ id: event_id }) => {
           display: flex;
           justify-content: space-between;
           align-items: center;
-          margin-bottom: 24px;
+          margin-bottom: 5px;
           flex-wrap: wrap;
           gap: 16px;
         }
@@ -663,6 +663,14 @@ const RealtimeVoting = ({ id: event_id }) => {
           animation: spin 1s linear infinite;
         }
         
+         .top-h3 {
+            font-size: 1.2rem;
+            // margin-bottom: 20px;
+            color: #333;
+            font-weight: 600;
+            text-align: left;
+          }
+
         @keyframes spin {
           0% { transform: rotate(0deg); }
           100% { transform: rotate(360deg); }
@@ -675,10 +683,19 @@ const RealtimeVoting = ({ id: event_id }) => {
           box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
           margin-top: 30px;
           }
+
+           .top-h3 {
+            font-size: 1.2rem;
+         
+            color: #333;
+            font-weight: 600;
+            text-align: left;
+          }
           
           .table-header {
             flex-direction: column;
             align-items: flex-start;
+            
           }
           
           .export-btn {
@@ -696,7 +713,10 @@ const RealtimeVoting = ({ id: event_id }) => {
           
           table {
             min-width: 100%;
+            border: none;
           }
+
+          
           
           thead {
             display: none;
