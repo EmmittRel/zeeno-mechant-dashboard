@@ -61,7 +61,8 @@ const VotingData = () => {
   const [isMobile, setIsMobile] = useState(false);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [series, setSeries] = useState([{ name: "Votes", data: [0, 0, 0, 0] }]);
+  const [series, setSeries] = useState([]);
+  const [categories, setCategories] = useState(["12:00 am", "6:00 am", "12:00 pm", "6:00 pm"]);
 
   const chartOptions = useMemo(() => ({
     chart: {
@@ -70,7 +71,7 @@ const VotingData = () => {
       zoom: { enabled: false },
     },
     xaxis: {
-      categories: ["12:00 am", "6:00 am", "12:00 pm", "6:00 pm"],
+      categories: categories,
       labels: {
         style: {
           colors: "#333333",
@@ -82,19 +83,42 @@ const VotingData = () => {
       title: { text: "Votes" },
       labels: { style: { fontWeight: "bold" } },
     },
-    stroke: { curve: "smooth" },
-    colors: ["rgb(133, 219, 80)"],
+    stroke: { 
+      curve: "smooth",
+      width: 3
+    },
+    colors: ["#FF6384", "#36A2EB", "#FFCE56", "#4BC0C0", "#9966FF"],
     fill: {
       type: "gradient",
       gradient: {
         shade: "light",
         type: "vertical",
-        gradientToColors: ["rgb(133, 219, 80)"],
+        gradientToColors: ["#FF6384", "#36A2EB", "#FFCE56", "#4BC0C0", "#9966FF"],
         stops: [0, 100],
       },
     },
     grid: { borderColor: "#ECEFF1" },
-  }), []);
+    legend: {
+      position: 'top',
+      horizontalAlign: 'right',
+      markers: {
+        radius: 12
+      },
+      itemMargin: {
+        horizontal: 10,
+        vertical: 5
+      }
+    },
+    tooltip: {
+      shared: true,
+      intersect: false,
+      y: {
+        formatter: function (value) {
+          return value.toLocaleString() + " votes";
+        }
+      }
+    }
+  }), [categories]);
 
   // Extract intent_id from NQR transaction
   const getIntentIdFromNQR = useCallback((addenda1, addenda2) => {
@@ -108,16 +132,34 @@ const VotingData = () => {
     }
   }, []);
 
-  // Process all payment data and calculate votes by time intervals
+  // Format date for display
+  const formatDisplayDate = useCallback((dateString) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', { 
+      month: 'short', 
+      day: 'numeric',
+      year: date.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined
+    });
+  }, []);
+
+  // Process all payment data and calculate votes by time intervals for last 5 days
   const processVotingData = useCallback(async () => {
     setLoading(true);
     try {
-      const today = new Date().toISOString().split('T')[0];
+      const today = new Date();
+      const last5Days = [];
       
+      // Generate dates for last 5 days
+      for (let i = 0; i < 5; i++) {
+        const date = new Date(today);
+        date.setDate(date.getDate() - i);
+        last5Days.push(date.toISOString().split('T')[0]);
+      }
+
       // Fetch all data in parallel
       const [events, nqrData, regularPayments, qrPayments] = await Promise.all([
         apiService.getEvents(token),
-        apiService.getNqrTransactions(token, today),
+        apiService.getNqrTransactions(token, today.toISOString().split('T')[0]),
         apiService.getPaymentIntents(event_id, token),
         apiService.getQrIntents(event_id, token)
       ]);
@@ -147,10 +189,13 @@ const VotingData = () => {
       // Process successful payments only
       const successfulPayments = allPayments.filter(p => p.status === 'S');
 
-      // Calculate votes by time intervals
-      const timeIntervals = ["12:00 am", "6:00 am", "12:00 pm", "6:00 pm"];
+      // Initialize daily votes object for last 5 days
       const dailyVotes = {};
+      last5Days.forEach(date => {
+        dailyVotes[date] = [0, 0, 0, 0]; // Initialize for each time interval
+      });
 
+      // Calculate votes by time intervals for each day
       successfulPayments.forEach(payment => {
         const currency = 
           ["ESEWA", "KHALTI", "FONEPAY", "PRABHUPAY", "NQR", "QR"].includes(payment.processor?.toUpperCase()) ? "NPR" :
@@ -162,26 +207,32 @@ const VotingData = () => {
         const dateKey = updatedAt.toISOString().split("T")[0];
         const hours = updatedAt.getHours();
 
-        if (!dailyVotes[dateKey]) dailyVotes[dateKey] = [0, 0, 0, 0];
-
-        if (hours >= 0 && hours < 6) dailyVotes[dateKey][0] += votes;
-        else if (hours >= 6 && hours < 12) dailyVotes[dateKey][1] += votes;
-        else if (hours >= 12 && hours < 18) dailyVotes[dateKey][2] += votes;
-        else dailyVotes[dateKey][3] += votes;
+        // Only process if date is within our last 5 days
+        if (dailyVotes[dateKey]) {
+          if (hours >= 0 && hours < 6) dailyVotes[dateKey][0] += votes;
+          else if (hours >= 6 && hours < 12) dailyVotes[dateKey][1] += votes;
+          else if (hours >= 12 && hours < 18) dailyVotes[dateKey][2] += votes;
+          else dailyVotes[dateKey][3] += votes;
+        }
       });
 
-      // Sort dates and prepare chart data
-      const sortedDates = Object.keys(dailyVotes).sort((a, b) => new Date(b) - new Date(a));
-      const seriesData = sortedDates.map(date => ({ name: date, data: dailyVotes[date] }));
+      // Prepare chart data for last 5 days
+      const seriesData = last5Days
+        .filter(date => dailyVotes[date]) // Ensure date exists
+        .map(date => ({
+          name: formatDisplayDate(date),
+          data: dailyVotes[date]
+        }))
+        .reverse(); // Show oldest first in legend
 
-      setSeries(seriesData.length ? seriesData : [{ name: "Votes", data: [0, 0, 0, 0] }]);
+      setSeries(seriesData.length ? seriesData : []);
     } catch (err) {
       console.error("Error processing voting data:", err);
       setError("Failed to process voting data.");
     } finally {
       setLoading(false);
     }
-  }, [event_id, token, getIntentIdFromNQR]);
+  }, [event_id, token, getIntentIdFromNQR, formatDisplayDate]);
 
   // Initial data load and setup
   useEffect(() => {
@@ -304,6 +355,12 @@ const VotingData = () => {
           .candidate-button:hover {
             background-color: #1565C0;
           }
+          .no-data-message {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+            font-size: 18px;
+          }
           @media (max-width: 768px) {
             .dashboard-container {
               flex-direction: column;
@@ -320,7 +377,7 @@ const VotingData = () => {
               padding-bottom: 0;
             }
             .chart-header h1 {
-              font-size: 18px;
+              font-size: 1.2rem;
             }
             .date-display {
               display: none;
@@ -342,9 +399,9 @@ const VotingData = () => {
         `}
       </style>
       <div className="chart-card">
-        <h3 className="voting-h3">Voting Activity by Time Intervals</h3>
+        <h3 className="voting-h3">Voting Activity Comparison (Last 5 Days)</h3>
         <div className="chart-header">
-          <h3>Today's Votes</h3>
+          <h3>Daily Votes by Time Intervals</h3>
           <div className="date-display">{currentDate}</div>
         </div>
         {hasVotingData ? (
@@ -356,7 +413,9 @@ const VotingData = () => {
             className="chart"
           />
         ) : (
-          <p>No Votes available for now.</p>
+          <div className="no-data-message">
+            No voting data available for the last 5 days.
+          </div>
         )}
       </div>
 

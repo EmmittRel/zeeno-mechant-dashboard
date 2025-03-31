@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { FaDownload } from 'react-icons/fa';
+import { FaDownload, FaChevronLeft, FaChevronRight } from 'react-icons/fa';
+import { FiLoader } from 'react-icons/fi';
 import ReactCountryFlag from 'react-country-flag';
 import { useToken } from '../../context/TokenContext';
 import { calculateVotes } from '../AmountCalculator';
@@ -29,10 +30,10 @@ const currencyToCountry = {
 };
 
 const statusLabel = {
-  P: { label: 'Pending', color: '#FFA500' },
-  S: { label: 'Success', color: '#28A745' },
-  F: { label: 'Failed', color: '#DC3545' },
-  C: { label: 'Cancelled', color: '#6C757D' },
+  P: { label: 'Pending', color: '#FFA500', icon: '⏳' },
+  S: { label: 'Success', color: '#28A745', icon: '✓' },
+  F: { label: 'Failed', color: '#DC3545', icon: '✗' },
+  C: { label: 'Cancelled', color: '#6C757D', icon: '⊘' },
 };
 
 const RealtimeVoting = ({ id: event_id }) => {
@@ -76,23 +77,12 @@ const RealtimeVoting = ({ id: event_id }) => {
     const date = new Date(dateString);
     const day = date.getDate();
     const month = date.toLocaleString('en-US', { month: 'short' });
-    const year = date.getFullYear();
     const hours = date.getHours();
     const minutes = date.getMinutes().toString().padStart(2, '0');
     const period = hours >= 12 ? 'PM' : 'AM';
     const formattedHours = hours % 12 || 12;
 
-    const ordinalSuffix = (d) => {
-      if (d > 3 && d < 21) return 'th';
-      switch (d % 10) {
-        case 1: return 'st';
-        case 2: return 'nd';
-        case 3: return 'rd';
-        default: return 'th';
-      }
-    };
-
-    return `${day}${ordinalSuffix(day)} ${month} ${year}, ${formattedHours}:${minutes} ${period}`;
+    return `${month} ${day}, ${formattedHours}:${minutes} ${period}`;
   }, []);
 
   // Fetch event data
@@ -166,11 +156,12 @@ const RealtimeVoting = ({ id: event_id }) => {
           createdAt: item.created_at,
           formattedCreatedAt: formatDate(item.created_at),
           amount: item.amount,
-          status: statusLabel[item.status] || { label: item.status, color: '#6C757D' },
+          status: statusLabel[item.status] || { label: item.status, color: '#6C757D', icon: '?' },
           paymentType,
           votes,
           currency,
           contestantName,
+          id: `${item.created_at}-${Math.random().toString(36).substr(2, 9)}`
         };
       });
   }, [event_id, contestants, formatDate]);
@@ -266,6 +257,22 @@ const RealtimeVoting = ({ id: event_id }) => {
     setCurrentPage(page);
   }, []);
 
+  // Loading skeleton rows
+  const renderLoadingRows = () => {
+    return Array(rowsPerPage).fill(0).map((_, index) => (
+      <tr key={`loading-${index}`} className="loading-row">
+        <td><div className="loading-skeleton"></div></td>
+        <td><div className="loading-skeleton"></div></td>
+        <td><div className="loading-skeleton"></div></td>
+        <td><div className="loading-skeleton"></div></td>
+        <td><div className="loading-skeleton"></div></td>
+        <td><div className="loading-skeleton"></div></td>
+        <td><div className="loading-skeleton"></div></td>
+        <td><div className="loading-skeleton"></div></td>
+      </tr>
+    ));
+  };
+
   return (
     <div className="table-container">
       <div className="table-header">
@@ -275,62 +282,96 @@ const RealtimeVoting = ({ id: event_id }) => {
           onClick={handleExport} 
           disabled={loading || data.length === 0}
         >
-          <FaDownload className="export-icon" /> Export
+          <FaDownload className="export-icon" /> Export CSV
         </button>
       </div>
 
-      {(loading || nqrLoading) && (
-        <div className="loading-indicator">Loading data...</div>
-      )}
+      {/* <div className="stats-summary">
+        <div className="stat-card">
+          <div className="stat-value">{data.length}</div>
+          <div className="stat-label">Total Votes</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-value">
+            {data.reduce((sum, item) => sum + item.votes, 0).toLocaleString()}
+          </div>
+          <div className="stat-label">Total Vote Count</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-value">
+            {new Set(data.map(item => item.currency)).size}
+          </div>
+          <div className="stat-label">Currencies</div>
+        </div>
+      </div> */}
 
       <div className="table-wrapper">
         <table>
           <thead>
             <tr>
-              <th>Vote By</th>
-              <th>Vote To</th>
-              <th>Phone</th>
+              <th>Voter</th>
+              <th>Contestant</th>
+              <th>Contact</th>
               <th>Votes</th>
               <th>Status</th>
-              <th>Payment Type</th>
+              <th>Method</th>
               <th>Currency</th>
-              <th>Transaction Time</th>
+              <th>Time</th>
             </tr>
           </thead>
           <tbody>
-            {paginationData.currentData.length > 0 ? (
-              paginationData.currentData.map((row, index) => (
-                <tr key={`${row.createdAt}-${index}`}>
-                  <td>{row.name}</td>
-                  <td>{row.contestantName}</td>
-                  <td>{row.phone}</td>
-                  <td>{row.votes}</td>
-                  <td>
-                    <span className="status" style={{ 
-                      backgroundColor: row.status.color, 
-                      color: '#fff' 
+            {(loading || nqrLoading) ? (
+              renderLoadingRows()
+            ) : paginationData.currentData.length > 0 ? (
+              paginationData.currentData.map((row) => (
+                <tr key={row.id}>
+                  <td data-label="Voter">
+                    <div className="voter-info">
+                      <div className="voter-name">{row.name}</div>
+                      {/* <div className="voter-email">{row.email}</div> */}
+                    </div>
+                  </td>
+                  <td data-label="Contestant">{row.contestantName}</td>
+                  <td data-label="Contact">{row.phone}</td>
+                  <td data-label="Votes" className="votes-cell">
+                    <span className="vote-count">{row.votes}</span>
+                  </td>
+                  <td data-label="Status">
+                    <span className="status-badge" style={{ 
+                      backgroundColor: `${row.status.color}20`,
+                      border: `1px solid ${row.status.color}`,
+                      color: row.status.color
                     }}>
+                      <span className="status-icon">{row.status.icon}</span>
                       {row.status.label}
                     </span>
                   </td>
-                  <td>{row.paymentType}</td>
-                  <td>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                  <td data-label="Method">{row.paymentType}</td>
+                  <td data-label="Currency">
+                    <div className="currency-cell">
                       <ReactCountryFlag
                         countryCode={currencyToCountry[row.currency]}
                         svg
                         style={{ width: '20px', height: '15px' }}
+                        title={row.currency}
                       />
                       <span>{row.currency}</span>
                     </div>
                   </td>
-                  <td>{row.formattedCreatedAt}</td>
+                  <td data-label="Time">
+                    <div className="time-cell">
+                      <div className="time-text">{row.formattedCreatedAt}</div>
+                    </div>
+                  </td>
                 </tr>
               ))
             ) : (
               <tr>
-                <td colSpan="8" style={{ textAlign: 'center' }}>
-                  {loading || nqrLoading ? 'Loading data...' : 'No voting data available for this event.'}
+                <td colSpan="8" className="no-data">
+                  <div className="no-data-content">
+                    <FiLoader className="no-data-icon" />
+                    <div>No voting data available for this event</div>
+                  </div>
                 </td>
               </tr>
             )}
@@ -343,96 +384,366 @@ const RealtimeVoting = ({ id: event_id }) => {
           <button
             onClick={() => handlePageChange(currentPage - 1)}
             disabled={currentPage === 1 || loading}
-            className="pagination-btn"
+            className="pagination-btn prev"
           >
-            Prev
+            <FaChevronLeft />
           </button>
-          <span className="page-info">
-            Page {currentPage} of {paginationData.totalPages}
-          </span>
+          
+          {Array.from({ length: Math.min(5, paginationData.totalPages) }, (_, i) => {
+            let pageNum;
+            if (paginationData.totalPages <= 5) {
+              pageNum = i + 1;
+            } else if (currentPage <= 3) {
+              pageNum = i + 1;
+            } else if (currentPage >= paginationData.totalPages - 2) {
+              pageNum = paginationData.totalPages - 4 + i;
+            } else {
+              pageNum = currentPage - 2 + i;
+            }
+            
+            return (
+              <button
+                key={pageNum}
+                onClick={() => handlePageChange(pageNum)}
+                disabled={loading}
+                className={`pagination-btn ${currentPage === pageNum ? 'active' : ''}`}
+              >
+                {pageNum}
+              </button>
+            );
+          })}
+          
           <button
             onClick={() => handlePageChange(currentPage + 1)}
             disabled={currentPage === paginationData.totalPages || loading}
-            className="pagination-btn"
+            className="pagination-btn next"
           >
-            Next
+            <FaChevronRight />
           </button>
         </div>
       )}
 
       <style jsx>{`
         .table-container {
-          font-family: 'Poppins', sans-serif;
+          font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
           padding: 20px;
+          background: #fff;
+          border-radius: 12px;
+          // box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
         }
+        
         .table-header {
           display: flex;
           justify-content: space-between;
           align-items: center;
-          margin-bottom: 20px;
+          margin-bottom: 24px;
+          flex-wrap: wrap;
+          gap: 16px;
         }
+        
+        .table-header h3 {
+          font-size: 1.5rem;
+          font-weight: 600;
+          color: #1a1a1a;
+          margin: 0;
+        }
+        
         .export-btn {
-          padding: 8px 20px;
+          padding: 10px 16px;
           border: none;
-          background-color: #028248;
+          background-color: #4CAF50;
           color: white;
-          border-radius: 5px;
+          border-radius: 8px;
           cursor: pointer;
-          font-weight: bold;
+          font-weight: 500;
           display: flex;
           align-items: center;
           gap: 8px;
-          font-family: 'Poppins', sans-serif;
+          font-size: 0.9rem;
+          transition: all 0.2s ease;
         }
+        
+        .export-btn:hover:not(:disabled) {
+          background-color: #3d8b40;
+          transform: translateY(-1px);
+        }
+        
         .export-btn:disabled {
-          background-color: #cccccc;
+          background-color: #a5d6a7;
           cursor: not-allowed;
+          opacity: 0.7;
         }
+        
+        .stats-summary {
+          display: flex;
+          gap: 16px;
+          margin-bottom: 24px;
+          flex-wrap: wrap;
+        }
+        
+        .stat-card {
+          flex: 1;
+          min-width: 150px;
+          background: #f8f9fa;
+          border-radius: 8px;
+          padding: 16px;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        
+        .stat-value {
+          font-size: 1.5rem;
+          font-weight: 700;
+          color: #2c3e50;
+          margin-bottom: 4px;
+        }
+        
+        .stat-label {
+          font-size: 0.85rem;
+          color: #7f8c8d;
+          font-weight: 500;
+        }
+        
         .table-wrapper {
           overflow-x: auto;
           -webkit-overflow-scrolling: touch;
+          border-radius: 8px;
+          // border: 1px solid #e0e0e0;
         }
+        
         table {
           width: 100%;
           border-collapse: collapse;
           text-align: left;
-          border: 1px solid #ddd;
           min-width: 800px;
         }
+        
         th, td {
-          padding: 12px;
-          text-align: center;
-          border-bottom: 1px solid #ddd;
+          padding: 14px 16px;
+          border-bottom: 1px solid #e0e0e0;
         }
+        
         th {
-          background-color: #028248;
+          background-color: #f5f7fa;
           font-weight: 600;
-          color: #fff;
+          color: #4a5568;
+          font-size: 0.85rem;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
         }
+        
+        td {
+          color: #2d3748;
+          font-size: 0.95rem;
+          vertical-align: middle;
+        }
+        
+        .voter-info {
+          display: flex;
+          flex-direction: column;
+        }
+        
+        .voter-name {
+          font-weight: 500;
+        }
+        
+        .voter-email {
+          font-size: 0.8rem;
+          color: #718096;
+          margin-top: 2px;
+        }
+        
+        .votes-cell {
+          font-weight: 600;
+          color: #2b6cb0;
+        }
+        
+        .status-badge {
+          padding: 6px 10px;
+          border-radius: 20px;
+          font-size: 0.8rem;
+          font-weight: 500;
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+        }
+        
+        .status-icon {
+          font-size: 0.9rem;
+        }
+        
+        .currency-cell {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+        
+        .time-cell {
+          display: flex;
+          flex-direction: column;
+        }
+        
+        .time-text {
+          font-size: 0.85rem;
+          color: #4a5568;
+        }
+        
         .pagination {
-          margin-top: 20px;
+          margin-top: 24px;
           display: flex;
           justify-content: center;
           align-items: center;
-          gap: 10px;
+          gap: 8px;
+          flex-wrap: wrap;
         }
-        .status {
-          padding: 5px 10px;
-          border-radius: 5px;
-          font-weight: bold;
-          font-size: 12px;
+        
+        .pagination-btn {
+          padding: 8px 12px;
+          border: 1px solid #e2e8f0;
+          background: white;
+          color: #4a5568;
+          border-radius: 6px;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          min-width: 36px;
+          height: 36px;
+          transition: all 0.2s ease;
         }
+        
+        .pagination-btn:hover:not(:disabled) {
+          background: #edf2f7;
+          border-color: #cbd5e0;
+        }
+        
+        .pagination-btn:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+        
+        .pagination-btn.active {
+          background: #4299e1;
+          border-color: #4299e1;
+          color: white;
+        }
+        
+        .loading-row td {
+          padding: 12px 16px;
+        }
+        
+        .loading-skeleton {
+          height: 20px;
+          background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+          background-size: 200% 100%;
+          border-radius: 4px;
+          animation: shimmer 1.5s infinite linear;
+        }
+        
+        @keyframes shimmer {
+          0% { background-position: 200% 0; }
+          100% { background-position: -200% 0; }
+        }
+        
+        .no-data {
+          padding: 40px 20px;
+          text-align: center;
+        }
+        
+        .no-data-content {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 12px;
+          color: #718096;
+        }
+        
+        .no-data-icon {
+          font-size: 2rem;
+          color: #cbd5e0;
+          animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+        
+        /* Mobile responsiveness */
         @media (max-width: 768px) {
           .table-container {
-            margin-top: -10px;
-            padding: 10px;
+            // padding: 12px;
+          box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+          margin-top: 30px;
           }
+          
+          .table-header {
+            flex-direction: column;
+            align-items: flex-start;
+          }
+          
+          .export-btn {
+            display: none;
+          }
+          
+          .stats-summary {
+            flex-direction: column;
+            gap: 12px;
+          }
+          
+          .stat-card {
+            min-width: 100%;
+          }
+          
           table {
-            font-size: 14px;
+            min-width: 100%;
           }
-          th, td {
-            padding: 8px;
+          
+          thead {
+            display: none;
           }
+          
+          tr {
+            display: block;
+            margin-bottom: 16px;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 12px;
+          }
+          
+          td {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid #f0f0f0;
+          }
+          
+          td:last-child {
+            border-bottom: none;
+          }
+          
+          td::before {
+            content: attr(data-label);
+            font-weight: 600;
+            color: #4a5568;
+            margin-right: 12px;
+            font-size: 0.85rem;
+          }
+          
+          .status-badge, .currency-cell {
+            justify-content: flex-end;
+          }
+          
+          .pagination {
+            gap: 4px;
+          }
+          
+          .pagination-btn {
+            min-width: 32px;
+            height: 32px;
+            padding: 4px 8px;
+          }
+
         }
       `}</style>
     </div>
