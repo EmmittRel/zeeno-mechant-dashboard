@@ -13,7 +13,7 @@ const ViewRegistration = () => {
 
       {/* styled-jsx */}
       <style jsx>{`
-       html, body {
+        html, body {
         width: 100%;
         margin: 0;
         padding: 0;

@@ -10,8 +10,7 @@ const API_CONFIG = {
     QR_INTENTS: "/payments/qr/intents",
     NQR_TRANSACTIONS: "/payments/qr/transactions/static"
   },
-  DEFAULT_AVATAR: "https://via.placeholder.com/40",
-  REFRESH_INTERVAL: 30000 
+  DEFAULT_AVATAR: "https://via.placeholder.com/40"
 };
 
 const Contestant = ({ event_id, token }) => {
@@ -54,9 +53,8 @@ const Contestant = ({ event_id, token }) => {
         setLoading(true);
         setLoadingProgress(0);
         
-        // Simulate progress updates
         const progressInterval = setInterval(() => {
-          setLoadingProgress(prev => Math.min(prev + 10, 90));
+          setLoadingProgress(prev => Math.min(prev + 30, 90));
         }, 500);
 
         const today = new Date().toISOString().split('T')[0];
@@ -126,12 +124,10 @@ const Contestant = ({ event_id, token }) => {
     };
 
     fetchData();
-    const interval = setInterval(fetchData, API_CONFIG.REFRESH_INTERVAL);
 
     return () => {
       isMounted = false;
       controller.abort();
-      clearInterval(interval);
     };
   }, [event_id, token]);
 

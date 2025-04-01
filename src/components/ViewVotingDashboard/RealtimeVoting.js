@@ -26,7 +26,7 @@ const currencyToCountry = {
   USD: 'US', AUD: 'AU', GBP: 'GB', CAD: 'CA', EUR: 'EU', AED: 'AE',
   QAR: 'QA', MYR: 'MY', KWD: 'KW', HKD: 'HK', CNY: 'CN', SAR: 'SA',
   OMR: 'OM', SGD: 'SG', NOK: 'NO', KRW: 'KR', JPY: 'JP', THB: 'TH',
-  INR: 'IN', NPR: 'NP',
+  INR: 'IN', NPR: 'NP', ILS: 'IL'
 };
 
 const statusLabel = {

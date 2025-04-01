@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useCallback } from "react";
 import { useParams } from "react-router-dom";
 import { useToken } from "../../context/TokenContext";
 import { calculateVotes } from '../AmountCalculator';
@@ -16,7 +16,6 @@ const API_CONFIG = {
     TOTAL_VOTES: "https://i.ibb.co/SwHs5b7g/IMG-2417.png",
     TOP_PERFORMER: "https://i.ibb.co/by04tPM/IMG-2418.png"
   },
-  REFRESH_INTERVAL: 30000,
   DEFAULT_DATES: {
     START_DATE: "2025-03-20"
   }
@@ -30,12 +29,9 @@ const apiService = {
     const url = `${API_CONFIG.BASE_URL}${endpoint}`;
     const cacheKey = `${endpoint}-${JSON.stringify(options)}`;
     
-    // Cache check
+    // Return cached data if available
     if (apiService.cache.has(cacheKey)) {
-      const { data, timestamp } = apiService.cache.get(cacheKey);
-      if (Date.now() - timestamp < API_CONFIG.REFRESH_INTERVAL) {
-        return data;
-      }
+      return apiService.cache.get(cacheKey).data;
     }
 
     const response = await fetch(url, {
@@ -154,8 +150,8 @@ const VotingCardComponent = () => {
   const [error, setError] = useState(null);
   const [initialRender, setInitialRender] = useState(false);
 
-  // Staggered data fetching
-  const fetchData = async () => {
+  // Staggered data fetching with useCallback
+  const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const today = new Date().toISOString().split('T')[0];
@@ -191,7 +187,7 @@ const VotingCardComponent = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [event_id, token]);
 
   // Calculate votes - split into memoized steps
   const successfulIntents = useMemo(() => {
@@ -214,7 +210,7 @@ const VotingCardComponent = () => {
         status: 'S'
       }))
     ];
-  }, [data.paymentIntents, data.qrIntents, data.nqrTransactions]);
+  }, [data]);
 
   const contestantsWithVotes = useMemo(() => {
     return data.contestants.map(contestant => {
@@ -255,9 +251,7 @@ const VotingCardComponent = () => {
   useEffect(() => {
     setInitialRender(true);
     fetchData();
-    const interval = setInterval(fetchData, API_CONFIG.REFRESH_INTERVAL);
-    return () => clearInterval(interval);
-  }, [token, event_id]);
+  }, [fetchData]);
 
   const cards = useMemo(() => [
     {

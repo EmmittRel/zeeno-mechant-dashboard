@@ -19,6 +19,9 @@ const TableComponent = () => {
   const [error, setError] = useState(null);
   const { token } = useToken();
   const [paymentIntents, setPaymentIntents] = useState([]);
+  const [deletingId, setDeletingId] = useState(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteCandidate, setDeleteCandidate] = useState(null);
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -87,88 +90,90 @@ const TableComponent = () => {
       console.error("Error fetching payment intents:", error);
     }
   };
- // Transform API data with payment status check
-const transformApiData = (apiResponseArray) => {
-  return apiResponseArray.map((apiResponse) => {
-    try {
-      if (!apiResponse.response) {
-        console.error("Missing response in API response:", apiResponse);
-        return {};
-      }
 
-      const response = apiResponse.response;
-      
-      // Check if action_id exists in payment intents
-      const matchingPayment = paymentIntents.find(
-        intent => intent.action_id === apiResponse.action_id
-      );
+  // Transform API data with payment status check
+  const transformApiData = (apiResponseArray) => {
+    return apiResponseArray.map((apiResponse) => {
+      try {
+        if (!apiResponse.response) {
+          console.error("Missing response in API response:", apiResponse);
+          return {};
+        }
 
-      // Determine payment status
-      let paymentStatus = "Pending";
-      if (matchingPayment) {
-        // Check for QR payments (ESEWA, KHALTI, FONEPAY, PHONEPE)
-        if (matchingPayment.processor && ['ESEWA', 'KHALTI', 'FONEPAY', 'PHONEPE'].includes(matchingPayment.processor)) {
-          // Handle QR payment statuses
-          switch(matchingPayment.status) {
-            case 'S':
-              paymentStatus = "Paid";
-              break;
-            case 'P':
-              paymentStatus = "Pending";
-              break;
-            case 'F':
-              paymentStatus = "Failed";
-              break;
-            default:
-              paymentStatus = "Pending";
-          }
-        } 
-        // Check for regular payments
-        else {
-          // Handle regular payment statuses
-          switch(matchingPayment.status) {
-            case 'success':
-              paymentStatus = "Paid";
-              break;
-            case 'pending':
-              paymentStatus = "Pending";
-              break;
-            case 'failed':
-              paymentStatus = "Failed";
-              break;
-            default:
-              paymentStatus = "Pending";
+        const response = apiResponse.response;
+        
+        // Check if action_id exists in payment intents
+        const matchingPayment = paymentIntents.find(
+          intent => intent.action_id === apiResponse.action_id
+        );
+
+        // Determine payment status
+        let paymentStatus = "Pending";
+        if (matchingPayment) {
+          // Check for QR payments (ESEWA, KHALTI, FONEPAY, PHONEPE)
+          if (matchingPayment.processor && ['ESEWA', 'KHALTI', 'FONEPAY', 'PHONEPE'].includes(matchingPayment.processor)) {
+            // Handle QR payment statuses
+            switch(matchingPayment.status) {
+              case 'S':
+                paymentStatus = "Paid";
+                break;
+              case 'P':
+                paymentStatus = "Pending";
+                break;
+              case 'F':
+                paymentStatus = "Failed";
+                break;
+              default:
+                paymentStatus = "Pending";
+            }
+          } 
+          // Check for regular payments
+          else {
+            // Handle regular payment statuses
+            switch(matchingPayment.status) {
+              case 'success':
+                paymentStatus = "Paid";
+                break;
+              case 'pending':
+                paymentStatus = "Pending";
+                break;
+              case 'failed':
+                paymentStatus = "Failed";
+                break;
+              default:
+                paymentStatus = "Pending";
+            }
           }
         }
-      }
 
-      return {
-        name: response.name || "N/A",
-        email: response.email || "N/A",
-        phone: response.contactNumber || "N/A",
-        paymentStatus: paymentStatus,
-        status: "Pending",
-        imageUrl: response.image || "",
-        age: response.age || "N/A",
-        location: response.temporaryAddress || response.permanentAddress || "N/A",
-        parentName: response.guardianName || "N/A",
-        category: response.reason || "N/A",
-        dateOfBirth: response.dateOfBirth || "N/A",
-        gender: response.gender || "N/A",
-        weight: response.weight || "N/A",
-        height: response.height || "N/A",
-        optionalNumber: response.optionalNumber || "N/A",
-        source: response.source || "N/A",
-        temporaryAddress: response.temporaryAddress || "N/A",
-        permanentAddress: response.permanentAddress || "N/A",
-        action_id: apiResponse.action_id 
-      };
-    } catch (error) {
-      console.error("Error parsing response:", error);
-      return {};
-    }
-  });
-};
+        return {
+          id: apiResponse.id, // Using the response ID from the endpoint
+          name: response.name || "N/A",
+          email: response.email || "N/A",
+          phone: response.contactNumber || "N/A",
+          paymentStatus: paymentStatus,
+          status: "Pending",
+          imageUrl: response.image || "",
+          age: response.age || "N/A",
+          location: response.temporaryAddress || response.permanentAddress || "N/A",
+          parentName: response.guardianName || "N/A",
+          category: response.reason || "N/A",
+          dateOfBirth: response.dateOfBirth || "N/A",
+          gender: response.gender || "N/A",
+          weight: response.weight || "N/A",
+          height: response.height || "N/A",
+          optionalNumber: response.optionalNumber || "N/A",
+          source: response.source || "N/A",
+          temporaryAddress: response.temporaryAddress || "N/A",
+          permanentAddress: response.permanentAddress || "N/A",
+          action_id: apiResponse.action_id // Keeping for reference but not used for operations
+        };
+      } catch (error) {
+        console.error("Error parsing response:", error);
+        return {};
+      }
+    });
+  };
 
   // Fetch data when eventId is available
   useEffect(() => {
@@ -225,6 +230,55 @@ const transformApiData = (apiResponseArray) => {
       fetchData();
     }
   }, [eventId, token, isEventIdLoading]);
+
+  const handleDeleteClick = (id) => {
+    setDeleteCandidate(id);
+    setShowDeleteModal(true);
+  };
+
+  const handleDeleteResponse = async () => {
+    if (!deleteCandidate) return;
+    
+    setDeletingId(deleteCandidate);
+    setShowDeleteModal(false);
+    
+    try {
+      const response = await fetch(
+        `https://auth.zeenopay.com/events/form/response/${deleteCandidate}/`,
+        {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(
+          errorData.message || 
+          `Failed to delete response: ${response.statusText}`
+        );
+      }
+
+      // Update both data and filteredData states
+      setData(prevData => prevData.filter(item => item.id !== deleteCandidate));
+      setFilteredData(prevData => prevData.filter(item => item.id !== deleteCandidate));
+      
+      // Refresh payment intents as they might be related to the deleted response
+      await fetchPaymentIntents();
+      
+      // Show success feedback
+      alert("Response deleted successfully!");
+    } catch (error) {
+      console.error("Error deleting response:", error);
+      alert(`Error deleting response: ${error.message}`);
+    } finally {
+      setDeletingId(null);
+      setDeleteCandidate(null);
+    }
+  };
 
   // Handle filter changes
   const handleFilterChange = (e) => {
@@ -481,8 +535,8 @@ const transformApiData = (apiResponseArray) => {
                 </tr>
               </thead>
               <tbody>
-                {currentItems.map((row, index) => (
-                  <tr key={index}>
+                {currentItems.map((row) => (
+                  <tr key={row.id}>
                     <td>
                       {row.imageUrl ? (
                         <img
@@ -536,8 +590,12 @@ const transformApiData = (apiResponseArray) => {
                       <button className="action-btn" onClick={() => handleDownloadPDF(row)}>
                         <FaDownload />
                       </button>
-                      <button className="action-btn">
-                        <FaTimes />
+                      <button 
+                        className="action-btn delete-btn" 
+                        onClick={() => handleDeleteClick(row.id)}
+                        disabled={deletingId === row.id}
+                      >
+                        {deletingId === row.id ? <FaSpinner className="spinner" /> : <FaTimes />}
                       </button>
                     </td>
                   </tr>
@@ -570,6 +628,34 @@ const transformApiData = (apiResponseArray) => {
       {/* Render the PopupModal */}
       {isModalOpen && (
         <PopupModal data={selectedRowData} onClose={handleCloseModal} />
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && (
+        <div className="delete-confirmation-modal">
+          <div className="delete-modal-content">
+            <h3>Confirm Deletion</h3>
+            <p>Are you sure you want to delete this response? This action cannot be undone.</p>
+            <div className="delete-modal-buttons">
+              <button 
+                className="cancel-btn"
+                onClick={() => {
+                  setShowDeleteModal(false);
+                  setDeleteCandidate(null);
+                }}
+              >
+                Cancel
+              </button>
+              <button 
+                className="confirm-delete-btn"
+                onClick={handleDeleteResponse}
+                disabled={deletingId}
+              >
+                {deletingId ? <FaSpinner className="spinner" /> : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Styles */}
@@ -757,6 +843,14 @@ const transformApiData = (apiResponseArray) => {
           color: #0062FF;
         }
 
+        .action-btn.delete-btn {
+          color: #dc3545;
+        }
+
+        .action-btn.delete-btn:hover {
+          color: #a71d2a;
+        }
+
         /* Status styles */
         .paid {
           color: #28a745;
@@ -807,6 +901,83 @@ const transformApiData = (apiResponseArray) => {
           color: #495057;
         }
 
+        /* Delete Confirmation Modal Styles */
+        .delete-confirmation-modal {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background-color: rgba(0, 0, 0, 0.5);
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          z-index: 1000;
+        }
+
+        .delete-modal-content {
+          background-color: white;
+          padding: 25px;
+          border-radius: 10px;
+          width: 90%;
+          max-width: 400px;
+          box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+        }
+
+        .delete-modal-content h3 {
+          margin-top: 0;
+          color: #333;
+          font-size: 20px;
+        }
+
+        .delete-modal-content p {
+          margin: 15px 0 25px;
+          color: #666;
+          line-height: 1.5;
+        }
+
+        .delete-modal-buttons {
+          display: flex;
+          justify-content: flex-end;
+          gap: 12px;
+        }
+
+        .cancel-btn {
+          padding: 8px 16px;
+          background-color: #f1f1f1;
+          color: #333;
+          border: none;
+          border-radius: 6px;
+          cursor: pointer;
+          transition: background-color 0.2s;
+        }
+
+        .cancel-btn:hover {
+          background-color: #e0e0e0;
+        }
+
+        .confirm-delete-btn {
+          padding: 8px 16px;
+          background-color: #dc3545;
+          color: white;
+          border: none;
+          border-radius: 6px;
+          cursor: pointer;
+          transition: background-color 0.2s;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .confirm-delete-btn:hover:not(:disabled) {
+          background-color: #c82333;
+        }
+
+        .confirm-delete-btn:disabled {
+          opacity: 0.7;
+          cursor: not-allowed;
+        }
+
         /* Mobile-specific styles */
         @media (max-width: 768px) {
           .table-header {
@@ -841,6 +1012,19 @@ const transformApiData = (apiResponseArray) => {
           th, td {
             padding: 8px 10px;
             font-size: 14px;
+          }
+
+          .delete-modal-content {
+            width: 95%;
+            padding: 15px;
+          }
+
+          .delete-modal-buttons {
+            flex-direction: column;
+          }
+
+          .cancel-btn, .confirm-delete-btn {
+            width: 100%;
           }
         }
       `}</style>

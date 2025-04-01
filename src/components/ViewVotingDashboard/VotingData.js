@@ -192,7 +192,7 @@ const VotingData = () => {
       // Initialize daily votes object for last 5 days
       const dailyVotes = {};
       last5Days.forEach(date => {
-        dailyVotes[date] = [0, 0, 0, 0]; // Initialize for each time interval
+        dailyVotes[date] = [0, 0, 0, 0]; 
       });
 
       // Calculate votes by time intervals for each day
@@ -218,7 +218,7 @@ const VotingData = () => {
 
       // Prepare chart data for last 5 days
       const seriesData = last5Days
-        .filter(date => dailyVotes[date]) // Ensure date exists
+        .filter(date => dailyVotes[date]) 
         .map(date => ({
           name: formatDisplayDate(date),
           data: dailyVotes[date]
