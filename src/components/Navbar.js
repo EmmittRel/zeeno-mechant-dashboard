@@ -12,11 +12,13 @@ const Navbar = ({ toggleSidebar }) => {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [events, setEvents] = useState([]);
   const [username, setUsername] = useState("");
-  const [showTooltip, setShowTooltip] = useState(false); // State to manage tooltip visibility
+  const [userId, setUserId] = useState(null);
+  const [profileImage, setProfileImage] = useState("https://i.ibb.co/gMVX9tq4/Screenshot-2025-04-03-000218.png");
+  const [showTooltip, setShowTooltip] = useState(false);
   const location = useLocation();
   const { updateToken } = useToken();
   const navigate = useNavigate();
-  const tooltipRef = useRef(null); // Ref for the tooltip
+  const tooltipRef = useRef(null); 
 
   const pageTitleMap = {
     "/": "Dashboard Analytics",
@@ -36,15 +38,46 @@ const Navbar = ({ toggleSidebar }) => {
   const pageTitle = pageTitleMap[location.pathname] || "Dashboard";
 
   useEffect(() => {
-    const fetchUsername = () => {
-      const storedUsername = sessionStorage.getItem("username");
-      if (storedUsername) {
-        setUsername(storedUsername);
-      } else {
+    const fetchUserData = async () => {
+      try {
+        // Fetch user data from auth endpoint
+        const authResponse = await fetch("https://auth.zeenopay.com/users/me/", {
+          headers: {
+            Authorization: `Bearer ${sessionStorage.getItem("token")}`,
+          },
+        });
+        
+        if (authResponse.ok) {
+          const userData = await authResponse.json();
+          setUsername(userData.username);
+          setUserId(userData.id);
+          sessionStorage.setItem("username", userData.username);
+          
+          // Now fetch KYC data
+          const kycResponse = await fetch("https://auth.zeenopay.com/users/kyc/", {
+            headers: {
+              Authorization: `Bearer ${sessionStorage.getItem("token")}`,
+            },
+          });
+          
+          if (kycResponse.ok) {
+            const kycData = await kycResponse.json();
+            // Find the user with matching ID
+            const userKyc = kycData.find(item => item.user === userData.id);
+            if (userKyc && userKyc.registration_certificate_url) {
+              setProfileImage(userKyc.registration_certificate_url);
+            }
+          }
+        } else {
+          setUsername("Guest");
+        }
+      } catch (error) {
+        console.error("Error fetching user data:", error);
         setUsername("Guest");
       }
     };
-    fetchUsername();
+
+    fetchUserData();
   }, []);
 
   useEffect(() => {
@@ -104,7 +137,7 @@ const Navbar = ({ toggleSidebar }) => {
   };
 
   const handleVerifiedClick = () => {
-    setShowTooltip(!showTooltip); // Toggle tooltip visibility
+    setShowTooltip(!showTooltip); 
   };
 
   return (
@@ -141,7 +174,7 @@ const Navbar = ({ toggleSidebar }) => {
         <div className="user-info-container">
           <Link to="/profile">
             <img
-              src="https://i.postimg.cc/hvJ8ct4D/image.png"
+              src={profileImage}
               alt="Profile"
               className="profile-image"
             />
@@ -268,6 +301,7 @@ const Navbar = ({ toggleSidebar }) => {
           width: 40px;
           height: 40px;
           border-radius: 50%;
+          object-fit: cover;
         }
         .verified-tick {
           position: relative;
