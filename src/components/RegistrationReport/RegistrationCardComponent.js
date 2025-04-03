@@ -187,7 +187,7 @@ const RegistrationCardComponent = () => {
           flex-wrap: wrap;
           gap: 20px;
           justify-content: flex-start;
-          margin: 0px 0;
+          margin-bottom: 20px;
           animation: fadeIn 0.6s ease-in-out;
         }
 
@@ -205,7 +205,7 @@ const RegistrationCardComponent = () => {
           justify-content: space-between;
           width: 100%;
           max-width: 310px;
-          padding: 20px;
+          // padding: 20px;
           border: 1px solid #e5e5e5;
           border-radius: 8px;
           background-color: #ffffff;

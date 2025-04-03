@@ -29,7 +29,7 @@ const IndividualReport = () => {
 
          /* Dashboard container */
         .dashboard {
-          padding: 20px;
+          // padding: 20px;
           font-family: "Poppins", sans-serif;
           min-height: 100vh; 
           overflow-y: auto;
