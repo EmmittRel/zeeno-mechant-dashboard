@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import Chart from "react-apexcharts";
 import { useToken } from '../../context/TokenContext';
 
@@ -7,80 +7,106 @@ const ParticipantDemographics = () => {
   const [eventId, setFormId] = useState(null);
   const [error, setError] = useState(null);
   const { token } = useToken();
+  const [loading, setLoading] = useState(true);
 
+  // Payment success checker - checks for status 'S' for all processors
+  const checkPaymentSuccess = (payment) => {
+    if (!payment) return false;
+    return payment.status === 'S'; // Only check for status 'S'
+  };
+
+  // Extract eventId from URL (runs only once)
   useEffect(() => {
     const pathSegments = window.location.pathname.split("/");
     const id = pathSegments[pathSegments.length - 1];
-
     if (id && !isNaN(id)) {
-      setFormId(Number(id)); 
-      setError(null);  
+      setFormId(Number(id));
     } else {
-      setError("Invalid formId in URL");
+      setError("Invalid form ID in URL");
+      setLoading(false);
     }
   }, []);
 
+  // Main data fetching effect
   useEffect(() => {
-    const fetchData = async () => {
-      if (!eventId) {
-        return;
-      }
+    if (!eventId) return;
 
+    const fetchData = async () => {
       try {
-        const response = await fetch(`https://auth.zeenopay.com/events/form/responses/${eventId}/`, {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
+        setLoading(true);
+        setError(null);
+
+        // Fetch all data in parallel
+        const [regularResponse, qrResponse, participantResponse] = await Promise.all([
+          fetch(`https://auth.zeenopay.com/payments/intents/?event_id=${eventId}`, {
+            headers: { Authorization: `Bearer ${token}` }
+          }),
+          fetch(`https://auth.zeenopay.com/payments/qr/intents?event_id=${eventId}`, {
+            headers: { Authorization: `Bearer ${token}` }
+          }),
+          fetch(`https://auth.zeenopay.com/events/form/responses/${eventId}/`, {
+            headers: { Authorization: `Bearer ${token}` }
+          })
+        ]);
+
+        // Check if any responses failed
+        if (!regularResponse.ok || !qrResponse.ok || !participantResponse.ok) {
+          throw new Error('Failed to fetch one or more data sources');
+        }
+
+        const [regularData, qrData, participantData] = await Promise.all([
+          regularResponse.json(),
+          qrResponse.json(),
+          participantResponse.json()
+        ]);
+
+        const allPaymentIntents = [...regularData, ...qrData];
+        const filteredData = Array.isArray(participantData) 
+          ? participantData.filter(item => item.form === eventId)
+          : [];
+        
+        const ageCounts = {};
+
+        filteredData.forEach((participant) => {
+          try {
+            const responseData = participant.response || {};
+            const matchingPayment = allPaymentIntents.find(
+              intent => intent.action_id === participant.action_id
+            );
+            
+            const paymentSuccess = checkPaymentSuccess(matchingPayment);
+
+            if (paymentSuccess && responseData.age) {
+              const age = Math.floor(parseFloat(responseData.age));
+              if (!isNaN(age)) {
+                ageCounts[age] = (ageCounts[age] || 0) + 1;
+              }
+            }
+          } catch (e) {
+            console.error('Error processing participant:', e);
+          }
         });
 
-        if (!response.ok) {
-          throw new Error(`Error: ${response.statusText}`);
-        }
+        const ageArray = Object.keys(ageCounts).map(age => ({
+          age: parseInt(age),
+          count: ageCounts[age],
+        }));
 
-        const data = await response.json();
-
-        console.log("Fetched Data:", data);
-
-        if (Array.isArray(data)) {
-          // Filter data based on matching form ID
-          const filteredData = data.filter(item => item.form === eventId);
-
-          const ageCounts = {};
-
-          filteredData.forEach((participant) => {
-            const responseData = participant.response;
-
-            const age = Math.floor(parseFloat(responseData.age)); 
-            if (!isNaN(age)) {
-              ageCounts[age] = (ageCounts[age] || 0) + 1;
-            } else {
-              console.log("Invalid age value:", responseData.age);
-            }
-          });
-
-          const ageArray = Object.keys(ageCounts).map(age => ({
-            age: parseInt(age),
-            count: ageCounts[age],
-          }));
-
-          // Sort by age
-          ageArray.sort((a, b) => a.age - b.age);
-
-          console.log("Age Distribution Data:", ageArray); 
-          setAgeDistributionData(ageArray);
-        }
+        ageArray.sort((a, b) => a.age - b.age);
+        setAgeDistributionData(ageArray);
       } catch (error) {
-        console.error("Error fetching participant data:", error);
-        setError("Failed to fetch participant data");
+        console.error("Error fetching data:", error);
+        setError("Failed to fetch participant data. Please try again.");
+      } finally {
+        setLoading(false);
       }
     };
 
     fetchData();
   }, [eventId, token]);
 
-  const ageDistributionOptions = {
+  // Memoized chart configuration
+  const ageDistributionOptions = useMemo(() => ({
     chart: {
       type: "bar",
       toolbar: { show: false },
@@ -88,14 +114,6 @@ const ParticipantDemographics = () => {
         enabled: true,
         easing: 'easeinout',
         speed: 800,
-        animateGradually: {
-          enabled: true,
-          delay: 150
-        },
-        dynamicAnimation: {
-          enabled: true,
-          speed: 350
-        }
       }
     },
     plotOptions: {
@@ -103,10 +121,6 @@ const ParticipantDemographics = () => {
         horizontal: false,
         columnWidth: "40%",
         borderRadius: 4,
-        distributed: false,
-        dataLabels: {
-          position: 'top',
-        },
       }
     },
     dataLabels: {
@@ -117,132 +131,149 @@ const ParticipantDemographics = () => {
       labels: {
         style: {
           color: "#fff",
-          fontWeight: "bold",
           fontFamily: 'Poppins, sans-serif',
         },
       },
-      axisBorder: {
-        show: false
+      title: {
+        text: "Age",
+        style: {
+          color: "#fff",
+          fontFamily: 'Poppins, sans-serif',
+        },
       },
-      axisTicks: {
-        show: false
-      }
     },
     yaxis: {
       title: {
-        text: "Count",
+        text: "Number of Participants",
         style: {
           color: "#fff",
-          fontWeight: "bold",
           fontFamily: 'Poppins, sans-serif',
         },
       },
       labels: {
-        formatter: (value) => Math.floor(value),
         style: {
           color: "#fff",
           fontFamily: 'Poppins, sans-serif',
         },
       },
-      grid: {
-        show: true,
-        borderColor: 'rgba(255, 255, 255, 0.1)',
-        strokeDashArray: 3
-      }
     },
     colors: ["#ffffff"],
-    states: {
-      hover: {
-        filter: {
-          type: 'lighten',
-          value: 0.15
-        }
-      },
-      active: {
-        filter: {
-          type: 'darken',
-          value: 0.35
-        }
-      }
-    },
     fill: {
       opacity: 1,
-      colors: ["#ffffff"],
-      type: 'solid',
-      gradient: {
-        shade: 'dark',
-        type: "vertical",
-        shadeIntensity: 0.5,
-        gradientToColors: ["#4facfe"],
-        inverseColors: false,
-        opacityFrom: 0.85,
-        opacityTo: 0.85,
-        stops: [0, 100]
-      }
     },
     tooltip: {
-      enabled: true,
-      style: {
-        fontSize: '12px',
-        fontFamily: 'Poppins, sans-serif',
-      },
-      theme: 'dark',
       y: {
         formatter: function(val) {
-          return val + " participants";
+          return `${val} participant${val !== 1 ? 's' : ''}`;
         }
+      },
+      style: {
+        fontFamily: 'Poppins, sans-serif',
       }
     },
     responsive: [{
-      breakpoint: 480,
+      breakpoint: 600,
       options: {
         plotOptions: {
           bar: {
-            columnWidth: '30%'
+            columnWidth: '60%'
+          }
+        },
+        xaxis: {
+          labels: {
+            style: {
+              fontSize: '10px'
+            }
+          }
+        },
+        yaxis: {
+          labels: {
+            style: {
+              fontSize: '10px'
+            }
           }
         }
       }
     }]
-  };
+  }), [ageDistributionData]);
 
-  const ageDistributionSeries = [
+  const ageDistributionSeries = useMemo(() => [
     {
       name: "Participants",
       data: ageDistributionData.map(data => data.count),
     },
-  ];
+  ], [ageDistributionData]);
+
+  const handleExport = () => {
+    const csvContent = [
+      ["Age", "Count"],
+      ...ageDistributionData.map(item => [item.age, item.count])
+    ].map(e => e.join(",")).join("\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `paid_participants_age_distribution_${eventId}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   return (
     <div className="participant-demographics-container">
       <div className="header">
-        <h3 className="title-demo">Participant Demographics</h3>
-        <button className="export-button">Export</button>
+        <h3 className="title-demo">Participant Demographics (Paid)</h3>
+        {/* <button 
+          className="export-button"
+          onClick={handleExport}
+          disabled={ageDistributionData.length === 0 || loading}
+        >
+          {loading ? 'Loading...' : 'Export CSV'}
+        </button> */}
       </div>
 
       <div className="participant-container">
-        {error && <p style={{ color: "red", fontWeight: "bold" }}>{error}</p>}
-
+        {error && (
+          <div className="error-message">
+            <p>{error}</p>
+            <button onClick={() => window.location.reload()} className="retry-button">
+              Retry
+            </button>
+          </div>
+        )}
+        
         <div className="age-distribution">
-          <h3 className="regis">Age Distribution</h3>
-          {ageDistributionData.length > 0 ? (
+          <h3 className="chart-title">Age Distribution (Paid Participants)</h3>
+          {loading ? (
+            <div className="loading-indicator">
+              <div className="spinner"></div>
+              <p>Loading data...</p>
+            </div>
+          ) : ageDistributionData.length > 0 ? (
             <>
               <Chart
                 options={ageDistributionOptions}
                 series={ageDistributionSeries}
                 type="bar"
-                height={200}
+                height={300}
               />
-              <p style={{ color: "#fff", paddingLeft: '10px' }}>Age Distribution</p>
-              <span style={{ color: "#fff", fontWeight: "bold", paddingLeft: '10px' }}>
-                Last Updated: {new Date().toLocaleTimeString()}
-              </span>
+              <p className="chart-footer">
+                Showing participants with successfull payment
+              </p>
             </>
           ) : (
             <div className="no-data-message">
               <div className="no-data-content">
-                <img src="https://i.ibb.co/DPKwH0PD/oops-1.png" alt="No Data" className="no-data-image" />
-                <p className="no-data-text">No Demographics Data Available</p>
-                <p className="no-data-subtext">Please check back later or ensure data is being collected.</p>
+                <img 
+                  src="https://i.ibb.co/DPKwH0PD/oops-1.png" 
+                  alt="No Data" 
+                  className="no-data-image" 
+                />
+                <p className="no-data-text">No Paid Participants Data Available</p>
+                <p className="no-data-subtext">
+                  {eventId ? "No participants with payment status 'S' found" : "Invalid event ID"}
+                </p>
               </div>
             </div>
           )}
@@ -253,6 +284,10 @@ const ParticipantDemographics = () => {
         .participant-demographics-container {
           margin-bottom: 40px;
           font-family: 'Poppins', sans-serif;
+          background: #fff;
+          border-radius: 10px;
+          padding: 20px;
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
         }
 
         .header {
@@ -264,46 +299,48 @@ const ParticipantDemographics = () => {
 
         .title-demo {
           font-size: 18px;
-          color: #000;
-          font-weight: bold;
-          margin: 0; 
-          font-family: 'Poppins', sans-serif;
+          color: #2c3e50;
+          font-weight: 600;
+          margin: 0;
         }
 
         .export-button {
-          background-color: #007bff;
+          background-color: #3498db;
           color: #fff;
           border: none;
-          padding: 10px 20px;
-          border-radius: 5px;
+          padding: 8px 16px;
+          border-radius: 4px;
           cursor: pointer;
           font-size: 14px;
-          white-space: nowrap; 
           font-family: 'Poppins', sans-serif;
           transition: all 0.3s ease;
+          min-width: 120px;
         }
 
-        .export-button:hover {
-          background-color: #0056b3;
+        .export-button:hover:not(:disabled) {
+          background-color: #2980b9;
           transform: translateY(-2px);
-          box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+          box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+        }
+
+        .export-button:disabled {
+          background-color: #95a5a6;
+          cursor: not-allowed;
+          opacity: 0.7;
         }
 
         .participant-container {
           display: flex;
           justify-content: space-between;
           margin-bottom: 20px;
-          gap: 20px;
         }
 
         .age-distribution {
-          background-color: #007bff;
-          box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-          padding-left: 20px;
-          padding-right: 20px;
-          padding-bottom: 30px;
+          background-color: #3498db;
           border-radius: 8px;
-          width: 48%;
+          padding: 20px;
+          width: 100%;
+          box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
           transition: all 0.3s ease;
         }
 
@@ -311,124 +348,126 @@ const ParticipantDemographics = () => {
           box-shadow: 0 8px 15px rgba(0, 0, 0, 0.2);
         }
 
-        .age-distribution h3 {
-          font-size: 18px;
+        .chart-title {
+          font-size: 16px;
           margin-bottom: 20px;
           color: #fff;
-          font-weight: 600;
-          font-family: 'Poppins', sans-serif;
+          font-weight: 500;
         }
 
-        .age-distribution p {
-          font-size: 14px;
+        .chart-footer {
+          font-size: 12px;
           margin-top: 10px;
-          color: #fff;
-          font-family: 'Poppins', sans-serif;
-          opacity: 0.8;
+          color: rgba(255, 255, 255, 0.8);
+          text-align: center;
         }
 
-        .age-distribution span {
+        .error-message {
+          color: #e74c3c;
+          font-weight: 500;
+          margin: 10px 0;
+          text-align: center;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 10px;
+        }
+
+        .retry-button {
+          background-color: #e74c3c;
+          color: white;
+          border: none;
+          padding: 8px 16px;
+          border-radius: 4px;
+          cursor: pointer;
           font-size: 14px;
-          color: #fff;
-          font-weight: 600;
-          font-family: 'Poppins', sans-serif;
-          opacity: 0.8;
+        }
+
+        .loading-indicator {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          padding: 40px;
+          background-color: rgba(255, 255, 255, 0.1);
+          border-radius: 8px;
+        }
+
+        .loading-indicator .spinner {
+          border: 4px solid rgba(255, 255, 255, 0.3);
+          border-radius: 50%;
+          border-top: 4px solid #fff;
+          width: 30px;
+          height: 30px;
+          animation: spin 1s linear infinite;
+          margin-bottom: 10px;
+        }
+
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
         }
 
         .no-data-message {
           display: flex;
           justify-content: center;
           align-items: center;
-          height: 100%;
-          font-family: 'Poppins', sans-serif;
+          height: 200px;
           background-color: rgba(255, 255, 255, 0.1);
           border-radius: 8px;
           padding: 20px;
-          width: 100%;
-          box-sizing: border-box;
-          color: #fff;
         }
 
         .no-data-content {
           text-align: center;
-          max-width: 100%;
-          padding: 10px;
         }
 
         .no-data-image {
-          width: 100px;
-          height: 100px;
+          width: 80px;
+          height: 80px;
           margin-bottom: 16px;
           opacity: 0.7;
         }
 
         .no-data-text {
-          font-size: 18px;
+          font-size: 16px;
           color: #fff;
-          font-weight: bold;
+          font-weight: 500;
           margin: 0;
         }
 
         .no-data-subtext {
           font-size: 14px;
-          color: #fff;
+          color: rgba(255, 255, 255, 0.7);
           margin: 8px 0 0;
-          word-wrap: break-word;
-          max-width: 100%;
-          opacity: 0.7;
         }
 
-        /* Responsive styles */
         @media (max-width: 768px) {
-          .regis {
-            padding-left: 10px; 
-          }
-          
           .participant-demographics-container {
-            padding: 20px;
-          }
-
-          .header {
-            flex-direction: row;
-            align-items: center;
-            gap: 10px;
-          }
-
-          .title-demo {
-            font-size: 16px; 
-          }
-
-          .export-button {
-            padding: 8px 16px; 
-            font-size: 12px; 
-          }
-
-          .participant-container {
-            flex-direction: column;
-            gap: 15px;
-          }
-
-          .age-distribution {
-            width: 100%;
             padding: 15px;
           }
 
-          .age-distribution h3 {
+          .title-demo {
             font-size: 16px;
+          }
+
+          .export-button {
+            padding: 6px 12px;
+            font-size: 12px;
+            min-width: 100px;
+          }
+
+          .age-distribution {
+            padding: 15px;
+          }
+
+          .chart-title {
+            font-size: 14px;
             margin-bottom: 15px;
           }
 
-          .age-distribution p,
-          .age-distribution span {
-            font-size: 12px;
-          }
-
-          .age-distribution .apexcharts-canvas {
-            height: 150px !important;
-          }
-
           .no-data-text {
-            font-size: 16px;
+            font-size: 14px;
           }
 
           .no-data-subtext {
@@ -438,43 +477,29 @@ const ParticipantDemographics = () => {
 
         @media (max-width: 480px) {
           .participant-demographics-container {
-            padding: 20px;
-            margin-top: 20px;
+            padding: 10px;
           }
 
-          .regis {
-            padding-left: 10px; 
+          .header {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 10px;
           }
 
           .title-demo {
-            font-size: 12px; 
+            font-size: 14px;
           }
 
           .export-button {
-            font-size: 12px;
-            padding: 6px 12px; 
+            width: 100%;
           }
 
           .age-distribution {
-            padding: 0px;
+            padding: 10px;
           }
 
-          .age-distribution h3 {
-            font-size: 14px;
-            margin-bottom: 10px;
-          }
-
-          .age-distribution p,
-          .age-distribution span {
-            font-size: 10px;
-          }
-
-          .no-data-text {
-            font-size: 14px;
-          }
-
-          .no-data-subtext {
-            font-size: 10px;
+          .chart-title {
+            font-size: 13px;
           }
         }
       `}</style>

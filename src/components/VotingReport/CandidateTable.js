@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import "../../assets/table.css";
 import { useToken } from "../../context/TokenContext";
 import { useParams } from "react-router-dom";
-import { FaEye, FaEdit, FaTrash, FaDownload, FaSort } from "react-icons/fa";
+import { FaEye, FaEdit, FaTrash, FaDownload, FaSort, FaSortAmountDown } from "react-icons/fa";
 import * as XLSX from "xlsx";
 import CandidateModel from "./CandidateModal";
 import { calculateVotes } from '../AmountCalculator';
@@ -365,88 +365,120 @@ const CandidateTable = () => {
           <h3>Candidate List</h3>
         </div>
         <div
-          className="actions"
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "15px",
-            backgroundColor: "#f8f9fa",
-            padding: "10px",
-            borderRadius: "8px",
-            boxShadow: "0 2px 4px rgba(0, 0, 0, 0.1)",
-          }}
-        >
-          {/* Sort by Dropdown */}
-          <select
-            id="sort-by"
-            onChange={(e) => requestSort(e.target.value)}
-            value={sortConfig.key || ""}
-            style={{
-              padding: "8px 12px",
-              borderRadius: "6px",
-              border: "1px solid #ced4da",
-              backgroundColor: "#fff",
-              fontSize: "14px",
-              color: "#495057",
-              cursor: "pointer",
-              outline: "none",
-              transition: "border-color 0.3s ease",
-            }}
-          >
-            <option value="">Sort By</option>
-            <option value="name">Name</option>
-            <option value="misc_kv">C.No.</option>
-            <option value="votes">Votes</option>
-          </select>
+  className="actions"
+  style={{
+    display: "flex",
+    flexWrap: "wrap", 
+    alignItems: "center",
+    gap: "15px",
+    backgroundColor: "#f8f9fa",
+    padding: "10px",
+    borderRadius: "8px",
+    boxShadow: "0 2px 4px rgba(0, 0, 0, 0.1)",
+  }}
+>
 
-          {/* Ascending/Descending Button */}
-          <button
-            onClick={() =>
-              setSortConfig({
-                ...sortConfig,
-                direction: sortConfig.direction === "asc" ? "desc" : "asc",
-              })
-            }
-            style={{
-              padding: "8px 12px",
-              borderRadius: "6px",
-              border: "1px solid #ced4da",
-              backgroundColor: "#fff",
-              fontSize: "14px",
-              color: "#495057",
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              gap: "8px",
-              transition: "background-color 0.3s ease, border-color 0.3s ease",
-            }}
-          >
-            <FaSort style={{ fontSize: "14px" }} />
-            {sortConfig.direction === "asc" ? "Ascending" : "Descending"}
-          </button>
+  <div style={{
+    display: "flex",
+    flexWrap: "nowrap", 
+    gap: "15px",
+    alignItems: "center",
+    minWidth: "fit-content" 
+  }}>
+    {/* Sort by Dropdown */}
+    <div style={{ position: "relative", minWidth: "120px" }}>
+      <select
+        id="sort-by"
+        onChange={(e) => requestSort(e.target.value)}
+        value={sortConfig.key || ""}
+        style={{
+          padding: "8px 12px",
+          paddingRight: "32px",
+          borderRadius: "6px",
+          border: "1px solid #ced4da",
+          backgroundColor: "#fff",
+          fontSize: "14px",
+          color: "#495057",
+          cursor: "pointer",
+          outline: "none",
+          transition: "border-color 0.3s ease",
+          appearance: "none",
+          WebkitAppearance: "none",
+          MozAppearance: "none",
+          width: "100%",
+        }}
+      >
+        <option value="">Sort By</option>
+        <option value="name">Name</option>
+        <option value="misc_kv">C.No.</option>
+        <option value="votes">Votes</option>
+      </select>
+      <FaSortAmountDown 
+        style={{
+          position: "absolute",
+          right: "12px",
+          top: "50%",
+          transform: "translateY(-50%)",
+          fontSize: "14px",
+          color: "#495057",
+          pointerEvents: "none",
+        }}
+      />
+    </div>
 
-          {/* Export Button */}
-          <button
-            onClick={handleExport}
-            title="Export"
-            className="icon-btn export-btn"
-            style={{
-              padding: "8px 12px",
-              borderRadius: "6px",
-              border: "1px solid #ced4da",
-              backgroundColor: "#028248",
-              color: "white",
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              gap: "8px",
-              transition: "background-color 0.3s ease",
-            }}
-          >
-            <FaDownload style={{ fontSize: "14px" }} />
-            Export
-          </button>
-        </div>
+    {/* Ascending/Descending Button */}
+    <button
+      onClick={() =>
+        setSortConfig({
+          ...sortConfig,
+          direction: sortConfig.direction === "asc" ? "desc" : "asc",
+        })
+      }
+      style={{
+        padding: "8px 12px",
+        borderRadius: "6px",
+        border: "1px solid #ced4da",
+        backgroundColor: "#fff",
+        fontSize: "14px",
+        color: "#495057",
+        cursor: "pointer",
+        display: "flex",
+        alignItems: "center",
+        gap: "8px",
+        transition: "background-color 0.3s ease, border-color 0.3s ease",
+        whiteSpace: "nowrap",
+      }}
+    >
+      <FaSort style={{ fontSize: "14px" }} />
+      {sortConfig.direction === "asc" ? "Ascending" : "Descending"}
+    </button>
+  </div>
+
+ 
+</div>
+
+ <button
+    onClick={handleExport}
+    title="Export"
+    className="icon-btn export-btn"
+    style={{
+      padding: "8px 12px",
+      borderRadius: "6px",
+      border: "1px solid #ced4da",
+      backgroundColor: "#028248",
+      color: "white",
+      cursor: "pointer",
+      display: "flex",
+      alignItems: "center",
+      gap: "8px",
+      transition: "background-color 0.3s ease",
+      whiteSpace: "nowrap",
+      marginLeft: "30px",
+    }}
+  >
+    <FaDownload style={{ fontSize: "14px" }} />
+    Export
+  </button>
       </div>
 
       {/* Table */}

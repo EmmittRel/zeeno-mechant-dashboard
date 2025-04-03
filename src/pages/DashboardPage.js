@@ -1,8 +1,8 @@
 import React from 'react';
 import DashboardLayout from '../components/DashboardLayout';
-import DashboardCard from '../components/DashboardCard';
-import DashboardCalender from '../components/DashboardCalender';
-import "../assets/dashboardmain.css"
+import DashboardCard from '../components/MainDashboard/DashboardCard';
+import DashboardCalender from '../components/MainDashboard/DashboardCalender';
+import "../assets/DashboardCalender.module.css"
 
 const DashboardPage = () => {
   return (

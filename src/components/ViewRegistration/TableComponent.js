@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useToken } from '../../context/TokenContext';
 import {
   FaSearch,
@@ -7,7 +7,10 @@ import {
   FaEye,
   FaTimes,
   FaSpinner,
+  FaChevronLeft,
+  FaChevronRight
 } from "react-icons/fa";
+import { FiLoader } from "react-icons/fi";
 import PopupModal from "./popupmodal";
 import html2pdf from "html2pdf.js";
 
@@ -41,6 +44,18 @@ const TableComponent = () => {
   });
 
   const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+
+  // Debounce search input
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedQuery(searchQuery);
+    }, 300);
+
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [searchQuery]);
 
   // Extract eventId from URL
   useEffect(() => {
@@ -50,49 +65,8 @@ const TableComponent = () => {
     setIsEventIdLoading(false);
   }, []);
 
-  // Fetch both regular and QR payment intents
-  const fetchPaymentIntents = async () => {
-    try {
-      // Regular payment intents
-      const regularResponse = await fetch(
-        `https://auth.zeenopay.com/payments/intents/?event_id=${eventId}`,
-        {
-          method: "GET",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-
-      // QR payment intents
-      const qrResponse = await fetch(
-        `https://auth.zeenopay.com/payments/qr/intents?event_id=${eventId}`,
-        {
-          method: "GET",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-
-      if (!regularResponse.ok || !qrResponse.ok) {
-        throw new Error(`Payment intents network error`);
-      }
-
-      const regularData = await regularResponse.json();
-      const qrData = await qrResponse.json();
-
-      // Combine both payment intents
-      setPaymentIntents([...regularData, ...qrData]);
-    } catch (error) {
-      console.error("Error fetching payment intents:", error);
-    }
-  };
-
   // Transform API data with payment status check
-  const transformApiData = (apiResponseArray) => {
+  const transformApiData = (apiResponseArray, paymentIntentsArray) => {
     return apiResponseArray.map((apiResponse) => {
       try {
         if (!apiResponse.response) {
@@ -103,51 +77,27 @@ const TableComponent = () => {
         const response = apiResponse.response;
         
         // Check if action_id exists in payment intents
-        const matchingPayment = paymentIntents.find(
+        const matchingPayment = paymentIntentsArray.find(
           intent => intent.action_id === apiResponse.action_id
         );
 
         // Determine payment status
         let paymentStatus = "Pending";
         if (matchingPayment) {
-          // Check for QR payments (ESEWA, KHALTI, FONEPAY, PHONEPE)
-          if (matchingPayment.processor && ['ESEWA', 'KHALTI', 'FONEPAY', 'PHONEPE'].includes(matchingPayment.processor)) {
-            // Handle QR payment statuses
-            switch(matchingPayment.status) {
-              case 'S':
-                paymentStatus = "Paid";
-                break;
-              case 'P':
-                paymentStatus = "Pending";
-                break;
-              case 'F':
-                paymentStatus = "Failed";
-                break;
-              default:
-                paymentStatus = "Pending";
-            }
-          } 
-          // Check for regular payments
-          else {
-            // Handle regular payment statuses
-            switch(matchingPayment.status) {
-              case 'success':
-                paymentStatus = "Paid";
-                break;
-              case 'pending':
-                paymentStatus = "Pending";
-                break;
-              case 'failed':
-                paymentStatus = "Failed";
-                break;
-              default:
-                paymentStatus = "Pending";
-            }
+          // For Esewa payments, status 'S' means Success
+          if (matchingPayment.processor === 'ESEWA' && matchingPayment.status === 'S') {
+            paymentStatus = "Success";
+          }
+          // For regular payments
+          else if (matchingPayment.status === 'success') {
+            paymentStatus = "Success";
+          } else if (matchingPayment.status === 'failed') {
+            paymentStatus = "Failed";
           }
         }
 
         return {
-          id: apiResponse.id, // Using the response ID from the endpoint
+          id: apiResponse.id, 
           name: response.name || "N/A",
           email: response.email || "N/A",
           phone: response.contactNumber || "N/A",
@@ -166,7 +116,9 @@ const TableComponent = () => {
           source: response.source || "N/A",
           temporaryAddress: response.temporaryAddress || "N/A",
           permanentAddress: response.permanentAddress || "N/A",
-          action_id: apiResponse.action_id // Keeping for reference but not used for operations
+          action_id: apiResponse.action_id,
+          schoolName: response.schoolName || "N/A",
+          createdAt: apiResponse.created_at || new Date().toISOString()
         };
       } catch (error) {
         console.error("Error parsing response:", error);
@@ -175,61 +127,115 @@ const TableComponent = () => {
     });
   };
 
+  // Format date for display
+  const formatDate = useCallback((dateString) => {
+    const date = new Date(dateString);
+    const day = date.getDate();
+    const month = date.toLocaleString('en-US', { month: 'short' });
+    const hours = date.getHours();
+    const minutes = date.getMinutes().toString().padStart(2, '0');
+    const period = hours >= 12 ? 'PM' : 'AM';
+    const formattedHours = hours % 12 || 12;
+
+    return `${month} ${day}, ${formattedHours}:${minutes} ${period}`;
+  }, []);
+
+  // Status styling
+  const statusLabel = {
+    Success: { label: 'Success', color: '#28A745', icon: '✓' },
+    Pending: { label: 'Pending', color: '#FFA500', icon: '⏳' },
+    Failed: { label: 'Failed', color: '#DC3545', icon: '✗' }
+  };
+
   // Fetch data when eventId is available
   useEffect(() => {
+    let isMounted = true;
+    
     const fetchData = async () => {
       try {
         setLoading(true);
-        if (!eventId) {
-          throw new Error("Form ID is required");
+        if (!eventId) return;
+
+        // Fetch all data in parallel
+        const [regularResponse, qrResponse, formResponse] = await Promise.all([
+          fetch(`https://auth.zeenopay.com/payments/intents/?event_id=${eventId}`, {
+            headers: { Authorization: `Bearer ${token}` }
+          }),
+          fetch(`https://auth.zeenopay.com/payments/qr/intents?event_id=${eventId}`, {
+            headers: { Authorization: `Bearer ${token}` }
+          }),
+          fetch(`https://auth.zeenopay.com/events/form/responses/${eventId}/`, {
+            headers: { Authorization: `Bearer ${token}` }
+          })
+        ]);
+
+        const [regularData, qrData, apiData] = await Promise.all([
+          regularResponse.ok ? regularResponse.json() : [],
+          qrResponse.ok ? qrResponse.json() : [],
+          formResponse.ok ? formResponse.json() : []
+        ]);
+
+        const combinedPaymentIntents = [...regularData, ...qrData];
+        
+        if (isMounted) {
+          setPaymentIntents(combinedPaymentIntents);
+          
+          // Filter and transform data
+          const eventIdNumber = Number(eventId);
+          const filteredApiData = Array.isArray(apiData) 
+            ? apiData.filter(item => Number(item.form) === eventIdNumber)
+            : [];
+          
+          const transformedData = transformApiData(filteredApiData, combinedPaymentIntents);
+          setData(transformedData);
+          setFilteredData(transformedData);
         }
-
-        // First fetch payment intents
-        await fetchPaymentIntents();
-
-        // Then fetch form responses
-        const response = await fetch(
-          `https://auth.zeenopay.com/events/form/responses/${eventId}/`,
-          {
-            method: "GET",
-            headers: {
-              Authorization: `Bearer ${token}`,
-              "Content-Type": "application/json",
-            },
-          }
-        );
-
-        if (!response.ok) {
-          throw new Error(`Network error: ${response.statusText}`);
-        }
-
-        const apiData = await response.json();
-
-        // Ensure eventId is a number before comparison
-        const eventIdNumber = Number(eventId);
-
-        // Filter data based on matching form ID
-        const filteredApiData = apiData.filter(item => Number(item.form) === eventIdNumber);
-
-        const transformedData = transformApiData(Array.isArray(filteredApiData) ? filteredApiData : []);
-
-        setData(transformedData);
-        setFilteredData(transformedData);
-        setError(null);
       } catch (error) {
-        console.error("Error fetching data:", error);
-        setError(error.message);
-        setData([]);
-        setFilteredData([]);
+        if (isMounted) {
+          setError(error.message);
+          setData([]);
+          setFilteredData([]);
+        }
       } finally {
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }
     };
 
     if (eventId && !isEventIdLoading) {
       fetchData();
     }
+
+    return () => {
+      isMounted = false;
+    };
   }, [eventId, token, isEventIdLoading]);
+
+  // Apply filters and search when they change
+  useEffect(() => {
+    let result = [...data];
+
+    // Apply search filter
+    if (debouncedQuery) {
+      result = result.filter((row) =>
+        row.name.toLowerCase().includes(debouncedQuery.toLowerCase()) ||
+        row.email.toLowerCase().includes(debouncedQuery.toLowerCase()) ||
+        row.phone.toLowerCase().includes(debouncedQuery.toLowerCase())
+      );
+    }
+
+    // Apply payment status filter
+    if (filters.paymentStatus) {
+      result = result.filter(row => row.paymentStatus === filters.paymentStatus);
+    }
+
+    // Apply approval status filter
+    if (filters.approvalStatus) {
+      result = result.filter(row => row.status === filters.approvalStatus);
+    }
+
+    setFilteredData(result);
+    setCurrentPage(1);
+  }, [data, debouncedQuery, filters.paymentStatus, filters.approvalStatus]);
 
   const handleDeleteClick = (id) => {
     setDeleteCandidate(id);
@@ -255,22 +261,13 @@ const TableComponent = () => {
       );
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(
-          errorData.message || 
-          `Failed to delete response: ${response.statusText}`
-        );
+        throw new Error(`Failed to delete response: ${response.statusText}`);
       }
 
-      // Update both data and filteredData states
+      // Optimistically update the state
       setData(prevData => prevData.filter(item => item.id !== deleteCandidate));
       setFilteredData(prevData => prevData.filter(item => item.id !== deleteCandidate));
       
-      // Refresh payment intents as they might be related to the deleted response
-      await fetchPaymentIntents();
-      
-      // Show success feedback
-      alert("Response deleted successfully!");
     } catch (error) {
       console.error("Error deleting response:", error);
       alert(`Error deleting response: ${error.message}`);
@@ -280,66 +277,15 @@ const TableComponent = () => {
     }
   };
 
-  // Handle filter changes
-  const handleFilterChange = (e) => {
-    const { name, value } = e.target;
-    setFilters((prev) => ({ ...prev, [name]: value }));
+  const handleExport = useCallback(() => {
+    try {
+      const headers = [
+        "Name", "Email", "Phone", "Age", "Location", "Guardian Name", 
+        "Reason", "Date of Birth", "Gender", "Weight", "Height", 
+        "Optional Number", "Source", "School Name", "Payment Status", "Status"
+      ];
 
-    // Apply filters
-    let result = [...data];
-
-    if (value) {
-      result = result.filter((row) => {
-        if (name === "paymentStatus") {
-          return row.paymentStatus === value;
-        }
-        if (name === "approvalStatus") {
-          return row.status === value;
-        }
-        return true;
-      });
-    }
-
-    setFilteredData(result);
-    setCurrentPage(1); 
-  };
-
-  // Handle search changes
-  const handleSearchChange = (e) => {
-    const query = e.target.value.toLowerCase();
-    setSearchQuery(query);
-
-    const filtered = data.filter(
-      (row) =>
-        row.name.toLowerCase().includes(query) ||
-        row.email.toLowerCase().includes(query) ||
-        row.phone.toLowerCase().includes(query)
-    );
-
-    setFilteredData(filtered);
-    setCurrentPage(1); 
-  };
-
-  const handleExport = () => {
-    const csvContent = [
-      [
-        "Name",
-        "Email",
-        "Phone",
-        "Age",
-        "Location",
-        "Guardian Name",
-        "Reason",
-        "Date of Birth",
-        "Gender",
-        "Weight",
-        "Height",
-        "Optional Number",
-        "Source",
-        "Payment Status",
-        "Status",
-      ],
-      ...filteredData.map((row) => [
+      const rows = filteredData.map(row => [
         row.name,
         row.email,
         row.phone,
@@ -353,39 +299,37 @@ const TableComponent = () => {
         row.height,
         row.optionalNumber,
         row.source,
+        row.schoolName,
         row.paymentStatus,
         row.status,
-      ]),
-    ]
-      .map((e) => e.join(","))
-      .join("\n");
+      ]);
 
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const link = document.createElement("a");
-    if (link.download !== undefined) {
+      const csvContent = [headers, ...rows].map(row => row.join(',')).join('\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
-      link.setAttribute("href", url);
-      link.setAttribute("download", "data_export.csv");
-      link.style.visibility = "hidden";
+      
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'registration_data.csv';
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Error exporting data:', error);
     }
-  };
+  }, [filteredData]);
 
-  // Handle opening the modal
   const handleViewClick = (row) => {
     setSelectedRowData(row);
     setIsModalOpen(true);
   };
 
-  // Handle closing the modal
   const handleCloseModal = () => {
     setIsModalOpen(false);
     setSelectedRowData(null);
   };
 
-  // Function to handle downloading the modal content as a PDF
   const handleDownloadPDF = (row) => {
     const element = document.createElement("div");
     element.innerHTML = `
@@ -400,6 +344,7 @@ const TableComponent = () => {
         <p><strong>Gender:</strong> ${row.gender}</p>
         <p><strong>Weight:</strong> ${row.weight}</p>
         <p><strong>Height:</strong> ${row.height}</p>
+        <p><strong>School Name:</strong> ${row.schoolName}</p>
         <p><strong>Temporary Address:</strong> ${row.temporaryAddress}</p>
         <p><strong>Permanent Address:</strong> ${row.permanentAddress}</p>
         <p><strong>Guardian Name:</strong> ${row.parentName}</p>
@@ -419,22 +364,50 @@ const TableComponent = () => {
       jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
     };
 
-    // Generate and download the PDF
     html2pdf().from(element).set(opt).save();
   };
 
   // Pagination logic
-  const indexOfLastItem = currentPage * itemsPerPage;
-  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-  const currentItems = filteredData.slice(indexOfFirstItem, indexOfLastItem);
+  const paginationData = useMemo(() => {
+    const indexOfLastRow = currentPage * itemsPerPage;
+    const indexOfFirstRow = indexOfLastRow - itemsPerPage;
+    return {
+      currentData: filteredData.slice(indexOfFirstRow, indexOfLastRow),
+      totalPages: Math.ceil(filteredData.length / itemsPerPage)
+    };
+  }, [filteredData, currentPage, itemsPerPage]);
 
-  const totalPages = Math.ceil(filteredData.length / itemsPerPage);
+  const handlePageChange = useCallback((page) => {
+    setCurrentPage(page);
+  }, []);
 
-  const handlePageChange = (pageNumber) => {
-    setCurrentPage(pageNumber);
+  // Handle filter changes
+  const handleFilterChange = (e) => {
+    const { name, value } = e.target;
+    setFilters((prev) => ({ ...prev, [name]: value }));
   };
 
-  // Handle missing eventId
+  // Handle search changes
+  const handleSearchChange = (e) => {
+    setSearchQuery(e.target.value);
+  };
+
+  // Loading skeleton rows
+  const renderLoadingRows = () => {
+    return Array(itemsPerPage).fill(0).map((_, index) => (
+      <tr key={`loading-${index}`} className="loading-row">
+        <td><div className="loading-skeleton"></div></td>
+        <td><div className="loading-skeleton"></div></td>
+        <td><div className="loading-skeleton"></div></td>
+        <td><div className="loading-skeleton"></div></td>
+        <td><div className="loading-skeleton"></div></td>
+        <td><div className="loading-skeleton"></div></td>
+        <td><div className="loading-skeleton"></div></td>
+        <td><div className="loading-skeleton"></div></td>
+      </tr>
+    ));
+  };
+
   if (!eventId && !isEventIdLoading) {
     return (
       <div className="error-container">
@@ -444,7 +417,7 @@ const TableComponent = () => {
     );
   }
 
-  if (loading) {
+  if (loading && !filteredData.length) {
     return (
       <div className="loading-container">
         <FaSpinner className="spinner" />
@@ -464,11 +437,18 @@ const TableComponent = () => {
 
   return (
     <div className="table-container">
-      {/* Header with Title */}
-      <h3 className="header-title">Registration Responses</h3>
-
-      {/* Header with Search, Export, and Filter */}
       <div className="table-header">
+        <div className="top-h3">Registration Responses</div>
+        <button 
+          className="export-btn" 
+          onClick={handleExport} 
+          disabled={loading || filteredData.length === 0}
+        >
+          <FaDownload className="export-icon" /> Export CSV
+        </button>
+      </div>
+
+      <div className="table-controls">
         <div className="search-bar">
           <FaSearch className="search-icon" />
           <input
@@ -478,107 +458,79 @@ const TableComponent = () => {
             onChange={handleSearchChange}
           />
         </div>
-        <div className="actions">
-          <button className="export-btn" onClick={handleExport}>
-            <FaDownload className="export-icon" /> Export
-          </button>
-          <div className="filter">
-            <span className="filter-text">Filtration</span>
-            <div className="filter-dropdowns">
-              <select
-                name="paymentStatus"
-                value={filters.paymentStatus}
-                onChange={handleFilterChange}
-                className="filter-dropdown"
-              >
-                <option value="">All Payments</option>
-                <option value="Paid">Paid</option>
-                <option value="Pending">Pending</option>
-                <option value="Failed">Failed</option>
-              </select>
-              <select
-                name="approvalStatus"
-                value={filters.approvalStatus}
-                onChange={handleFilterChange}
-                className="filter-dropdown"
-              >
-                <option value="">All Status</option>
-                <option value="Approved">Approved</option>
-                <option value="Rejected">Rejected</option>
-                <option value="Pending">Pending</option>
-              </select>
-            </div>
-          </div>
+        <div className="filter-dropdowns">
+          <select
+            name="paymentStatus"
+            value={filters.paymentStatus}
+            onChange={handleFilterChange}
+            className="filter-dropdown"
+          >
+            <option value="">All Payments</option>
+            <option value="Success">Success</option>
+            <option value="Pending">Pending</option>
+            <option value="Failed">Failed</option>
+          </select>
+          <select
+            name="approvalStatus"
+            value={filters.approvalStatus}
+            onChange={handleFilterChange}
+            className="filter-dropdown"
+          >
+            <option value="">All Status</option>
+            <option value="Approved">Approved</option>
+            <option value="Rejected">Rejected</option>
+            <option value="Pending">Pending</option>
+          </select>
         </div>
       </div>
 
-      {/* Table */}
       <div className="table-wrapper">
-        {filteredData.length === 0 ? (
-          <div className="no-data">
-            <p>No data available</p>
-          </div>
-        ) : (
-          <>
-            <table>
-              <thead>
-                <tr>
-                  <th>Profile</th>
-                  <th>Full Name</th>
-                  <th className="email-column">Email Address</th>
-                  <th>Phone Number</th>
-                  <th>Age</th>
-                  <th>Location</th>
-                  <th>Guardian Name</th>
-                  <th>Payment Status</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {currentItems.map((row) => (
-                  <tr key={row.id}>
-                    <td>
-                      {row.imageUrl ? (
-                        <img
-                          src={row.imageUrl}
-                          alt={row.name}
-                          style={{
-                            width: "50px",
-                            height: "50px",
-                            borderRadius: "50%",
-                            objectFit: "cover",
-                          }}
-                        />
-                      ) : (
-                        <div
-                          style={{
-                            width: "50px",
-                            height: "50px",
-                            borderRadius: "50%",
-                            backgroundColor: "#ddd",
-                            display: "flex",
-                            justifyContent: "center",
-                            alignItems: "center",
-                          }}
-                        >
-                          N/A
-                        </div>
-                      )}
-                    </td>
-                    <td>{row.name}</td>
-                    <td className="email-column">{row.email}</td>
-                    <td>{row.phone}</td>
-                    <td>{row.age}</td>
-                    <td>{row.location}</td>
-                    <td>{row.parentName}</td>
-                    <td className={
-                      row.paymentStatus === "Paid" ? "paid" : 
-                      row.paymentStatus === "Failed" ? "failed" : 
-                      "pending"
-                    }>
-                      {row.paymentStatus}
-                    </td>
-                    <td>
+        <table>
+          <thead>
+            <tr>
+              <th>Profile</th>
+              <th>Full Name</th>
+              <th className="email-column">Email</th>
+              <th>Phone</th>
+              <th>Age</th>
+              <th>Location</th>
+              <th>Payment Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading && !filteredData.length ? (
+              renderLoadingRows()
+            ) : paginationData.currentData.length > 0 ? (
+              paginationData.currentData.map((row) => (
+                <tr key={row.id}>
+                  <td data-label="Profile">
+                    {row.imageUrl ? (
+                      <img
+                        src={row.imageUrl}
+                        alt={row.name}
+                        className="profile-image"
+                      />
+                    ) : (
+                      <div className="profile-placeholder">N/A</div>
+                    )}
+                  </td>
+                  <td data-label="Full Name">{row.name}</td>
+                  <td data-label="Email" className="email-column">{row.email}</td>
+                  <td data-label="Phone">{row.phone}</td>
+                  <td data-label="Age">{row.age}</td>
+                  <td data-label="Location">{row.location}</td>
+                  <td data-label="Payment Status">
+                    <span className="status-badge" style={{ 
+                      backgroundColor: `${statusLabel[row.paymentStatus]?.color || '#6C757D'}20`,
+                      border: `1px solid ${statusLabel[row.paymentStatus]?.color || '#6C757D'}`,
+                      color: statusLabel[row.paymentStatus]?.color || '#6C757D'
+                    }}>
+                      {statusLabel[row.paymentStatus]?.icon || '?'} {row.paymentStatus}
+                    </span>
+                  </td>
+                  <td data-label="Actions">
+                    <div className="action-buttons">
                       <button className="action-btn">
                         <a href={`tel:${row.phone}`} style={{ color: 'inherit', textDecoration: 'none' }}>
                           <FaPhoneAlt />
@@ -597,40 +549,72 @@ const TableComponent = () => {
                       >
                         {deletingId === row.id ? <FaSpinner className="spinner" /> : <FaTimes />}
                       </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-
-            {/* Pagination Controls */}
-            <div className="pagination">
-              <button
-                onClick={() => handlePageChange(currentPage - 1)}
-                disabled={currentPage === 1}
-              >
-                Previous
-              </button>
-              <span>
-                Page {currentPage} of {totalPages}
-              </span>
-              <button
-                onClick={() => handlePageChange(currentPage + 1)}
-                disabled={currentPage === totalPages}
-              >
-                Next
-              </button>
-            </div>
-          </>
-        )}
+                    </div>
+                  </td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan="8" className="no-data">
+                  <div className="no-data-content">
+                    <FiLoader className="no-data-icon" />
+                    <div>No registration data available</div>
+                  </div>
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
       </div>
 
-      {/* Render the PopupModal */}
+      {filteredData.length > 0 && (
+        <div className="pagination">
+          <button
+            onClick={() => handlePageChange(currentPage - 1)}
+            disabled={currentPage === 1 || loading}
+            className="pagination-btn prev"
+          >
+            <FaChevronLeft />
+          </button>
+          
+          {Array.from({ length: Math.min(5, paginationData.totalPages) }, (_, i) => {
+            let pageNum;
+            if (paginationData.totalPages <= 5) {
+              pageNum = i + 1;
+            } else if (currentPage <= 3) {
+              pageNum = i + 1;
+            } else if (currentPage >= paginationData.totalPages - 2) {
+              pageNum = paginationData.totalPages - 4 + i;
+            } else {
+              pageNum = currentPage - 2 + i;
+            }
+            
+            return (
+              <button
+                key={pageNum}
+                onClick={() => handlePageChange(pageNum)}
+                disabled={loading}
+                className={`pagination-btn ${currentPage === pageNum ? 'active' : ''}`}
+              >
+                {pageNum}
+              </button>
+            );
+          })}
+          
+          <button
+            onClick={() => handlePageChange(currentPage + 1)}
+            disabled={currentPage === paginationData.totalPages || loading}
+            className="pagination-btn next"
+          >
+            <FaChevronRight />
+          </button>
+        </div>
+      )}
+
       {isModalOpen && (
         <PopupModal data={selectedRowData} onClose={handleCloseModal} />
       )}
 
-      {/* Delete Confirmation Modal */}
       {showDeleteModal && (
         <div className="delete-confirmation-modal">
           <div className="delete-modal-content">
@@ -658,76 +642,72 @@ const TableComponent = () => {
         </div>
       )}
 
-      {/* Styles */}
-      <style>{`
+      <style jsx>{`
         .table-container {
-          font-family: 'Poppins', sans-serif;
+          font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
           padding: 20px;
+          background: #fff;
+          border-radius: 12px;
+          box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
         }
-
-        .header-title {
-          text-align: left;
-          font-size: 18px;
-          margin-bottom: 20px;
+        
+        .table-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 5px;
+          flex-wrap: wrap;
+          gap: 16px;
+        }
+        
+        .top-h3 {
+          font-size: 1.2rem;
           color: #333;
           font-weight: 600;
+          text-align: left;
         }
-
-        .loading-container, .error-container {
-          display: flex;
-          flex-direction: column;
-          justify-content: center;
-          align-items: center;
-          height: 300px;
-          text-align: center;
-        }
-
-        .spinner {
-          animation: spin 1s linear infinite;
-          font-size: 48px;
-          color: #0062FF;
-          margin-bottom: 20px;
-        }
-
-        @keyframes spin {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
-        }
-
-        .error-container button {
-          margin-top: 20px;
-          padding: 8px 16px;
-          background-color: #0062FF;
-          color: white;
+        
+        .export-btn {
+          padding: 10px 16px;
           border: none;
-          border-radius: 4px;
-          cursor: pointer;
-        }
-
-        .no-data {
-          text-align: center;
-          padding: 40px;
-          background-color: #f8f9fa;
+          background-color: #4CAF50;
+          color: white;
           border-radius: 8px;
-          margin-top: 20px;
-          color: #6c757d;
+          cursor: pointer;
+          font-weight: 500;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          font-size: 0.9rem;
+          transition: all 0.2s ease;
         }
-
-        .table-header {
+        
+        .export-btn:hover:not(:disabled) {
+          background-color: #3d8b40;
+          transform: translateY(-1px);
+        }
+        
+        .export-btn:disabled {
+          background-color: #a5d6a7;
+          cursor: not-allowed;
+          opacity: 0.7;
+        }
+        
+        .table-controls {
           display: flex;
           justify-content: space-between;
           align-items: center;
           margin-bottom: 20px;
           flex-wrap: wrap;
-          gap: 15px;
+          gap: 16px;
         }
-
+        
         .search-bar {
           position: relative;
           flex: 1;
           min-width: 250px;
         }
-
+        
         .search-icon {
           position: absolute;
           left: 12px;
@@ -735,7 +715,7 @@ const TableComponent = () => {
           transform: translateY(-50%);
           color: #6c757d;
         }
-
+        
         .search-bar input {
           width: 100%;
           padding: 10px 15px 10px 40px;
@@ -744,53 +724,17 @@ const TableComponent = () => {
           font-size: 14px;
           transition: border-color 0.3s;
         }
-
+        
         .search-bar input:focus {
           outline: none;
           border-color: #0062FF;
         }
-
-        .actions {
-          display: flex;
-          align-items: center;
-          gap: 15px;
-          flex-wrap: wrap;
-        }
-
-        .export-btn {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          padding: 10px 15px;
-          background-color: #28a745;
-          color: white;
-          border: none;
-          border-radius: 8px;
-          cursor: pointer;
-          font-size: 14px;
-          transition: background-color 0.3s;
-        }
-
-        .export-btn:hover {
-          background-color: #218838;
-        }
-
-        .filter {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-        }
-
-        .filter-text {
-          font-size: 14px;
-          color: #495057;
-        }
-
+        
         .filter-dropdowns {
           display: flex;
           gap: 10px;
         }
-
+        
         .filter-dropdown {
           padding: 8px 12px;
           border: 1px solid #ddd;
@@ -799,108 +743,207 @@ const TableComponent = () => {
           background-color: white;
           cursor: pointer;
         }
-
+        
         .table-wrapper {
           overflow-x: auto;
-          background-color: white;
+          -webkit-overflow-scrolling: touch;
           border-radius: 8px;
-          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
         }
-
+        
         table {
           width: 100%;
           border-collapse: collapse;
-        }
-
-        th, td {
-          padding: 12px 15px;
           text-align: left;
-          border-bottom: 1px solid #eee;
+          min-width: 800px;
         }
-
+        
+        th, td {
+          padding: 14px 16px;
+          border-bottom: 1px solid #e0e0e0;
+        }
+        
         th {
-          background-color: #f8f9fa;
+          background-color: #f5f7fa;
           font-weight: 600;
-          color: #495057;
-          white-space: nowrap;
+          color: #4a5568;
+          font-size: 0.85rem;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
         }
-
-        tr:hover {
-          background-color: #f8f9fa;
+        
+        td {
+          color: #2d3748;
+          font-size: 0.95rem;
+          vertical-align: middle;
         }
-
+        
+        .profile-image {
+          width: 40px;
+          height: 40px;
+          border-radius: 50%;
+          object-fit: cover;
+        }
+        
+        .profile-placeholder {
+          width: 40px;
+          height: 40px;
+          border-radius: 50%;
+          background-color: #f0f0f0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 0.8rem;
+          color: #6c757d;
+        }
+        
+        .status-badge {
+          padding: 6px 10px;
+          border-radius: 20px;
+          font-size: 0.8rem;
+          font-weight: 500;
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+        }
+        
+        .action-buttons {
+          display: flex;
+          gap: 8px;
+        }
+        
         .action-btn {
           background: none;
           border: none;
           color: #6c757d;
           cursor: pointer;
           font-size: 16px;
-          margin: 0 5px;
           transition: color 0.3s;
+          padding: 6px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: 4px;
         }
-
+        
         .action-btn:hover {
-          color: #0062FF;
+          background-color: #f0f0f0;
         }
-
+        
         .action-btn.delete-btn {
           color: #dc3545;
         }
-
+        
         .action-btn.delete-btn:hover {
-          color: #a71d2a;
-        }
-
-        /* Status styles */
-        .paid {
-          color: #28a745;
-          font-weight: bold;
+          background-color: #f8d7da;
         }
         
-        .pending {
-          color: #ffc107;
-          font-weight: bold;
-        }
-        
-        .failed {
-          color: #dc3545;
-          font-weight: bold;
-        }
-
         .pagination {
+          margin-top: 24px;
           display: flex;
           justify-content: center;
           align-items: center;
-          margin-top: 20px;
-          padding: 20px 0;
-          gap: 15px;
+          gap: 8px;
+          flex-wrap: wrap;
         }
-
-        .pagination button {
-          padding: 8px 16px;
-          background-color: #f8f9fa;
-          border: 1px solid #ddd;
+        
+        .pagination-btn {
+          padding: 8px 12px;
+          border: 1px solid #e2e8f0;
+          background: white;
+          color: #4a5568;
           border-radius: 6px;
           cursor: pointer;
-          transition: all 0.3s;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          min-width: 36px;
+          height: 36px;
+          transition: all 0.2s ease;
         }
-
-        .pagination button:hover:not(:disabled) {
+        
+        .pagination-btn:hover:not(:disabled) {
+          background: #edf2f7;
+          border-color: #cbd5e0;
+        }
+        
+        .pagination-btn:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+        
+        .pagination-btn.active {
+          background: #4299e1;
+          border-color: #4299e1;
+          color: white;
+        }
+        
+        .loading-row td {
+          padding: 12px 16px;
+        }
+        
+        .loading-skeleton {
+          height: 20px;
+          background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+          background-size: 200% 100%;
+          border-radius: 4px;
+          animation: shimmer 1.5s infinite linear;
+        }
+        
+        @keyframes shimmer {
+          0% { background-position: 200% 0; }
+          100% { background-position: -200% 0; }
+        }
+        
+        .no-data {
+          padding: 40px 20px;
+          text-align: center;
+        }
+        
+        .no-data-content {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 12px;
+          color: #718096;
+        }
+        
+        .no-data-icon {
+          font-size: 2rem;
+          color: #cbd5e0;
+          animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+        
+        .error-container, .loading-container {
+          display: flex;
+          flex-direction: column;
+          justify-content: center;
+          align-items: center;
+          height: 300px;
+          text-align: center;
+        }
+        
+        .error-container button, .loading-container button {
+          margin-top: 20px;
+          padding: 8px 16px;
           background-color: #0062FF;
           color: white;
-          border-color: #0062FF;
+          border: none;
+          border-radius: 4px;
+          cursor: pointer;
         }
-
-        .pagination button:disabled {
-          cursor: not-allowed;
-          opacity: 0.6;
+        
+        .spinner {
+          animation: spin 1s linear infinite;
+          font-size: 48px;
+          color: #0062FF;
+          margin-bottom: 20px;
         }
-
-        .pagination span {
-          font-size: 14px;
-          color: #495057;
-        }
-
+        
         /* Delete Confirmation Modal Styles */
         .delete-confirmation-modal {
           position: fixed;
@@ -914,7 +957,7 @@ const TableComponent = () => {
           align-items: center;
           z-index: 1000;
         }
-
+        
         .delete-modal-content {
           background-color: white;
           padding: 25px;
@@ -923,25 +966,25 @@ const TableComponent = () => {
           max-width: 400px;
           box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
         }
-
+        
         .delete-modal-content h3 {
           margin-top: 0;
           color: #333;
           font-size: 20px;
         }
-
+        
         .delete-modal-content p {
           margin: 15px 0 25px;
           color: #666;
           line-height: 1.5;
         }
-
+        
         .delete-modal-buttons {
           display: flex;
           justify-content: flex-end;
           gap: 12px;
         }
-
+        
         .cancel-btn {
           padding: 8px 16px;
           background-color: #f1f1f1;
@@ -951,11 +994,11 @@ const TableComponent = () => {
           cursor: pointer;
           transition: background-color 0.2s;
         }
-
+        
         .cancel-btn:hover {
           background-color: #e0e0e0;
         }
-
+        
         .confirm-delete-btn {
           padding: 8px 16px;
           background-color: #dc3545;
@@ -968,63 +1011,97 @@ const TableComponent = () => {
           align-items: center;
           gap: 8px;
         }
-
+        
         .confirm-delete-btn:hover:not(:disabled) {
           background-color: #c82333;
         }
-
+        
         .confirm-delete-btn:disabled {
           opacity: 0.7;
           cursor: not-allowed;
         }
-
-        /* Mobile-specific styles */
+        
+        /* Mobile responsiveness */
         @media (max-width: 768px) {
+          .table-container {
+            padding: 12px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+            margin-top: 30px;
+          }
+          
           .table-header {
             flex-direction: column;
             align-items: flex-start;
           }
-
-          .search-bar {
+          
+          .export-btn {
             width: 100%;
+            justify-content: center;
           }
-
-          .actions {
-            width: 100%;
-            justify-content: space-between;
+          
+          .table-controls {
+            flex-direction: column;
+            align-items: stretch;
           }
-
-          .filter {
-            width: 100%;
-            justify-content: space-between;
-          }
-
+          
           .filter-dropdowns {
             width: 100%;
-            justify-content: flex-end;
+            justify-content: space-between;
           }
-
-          /* Hide email column in responsive mode */
-          .email-column {
+          
+          .filter-dropdown {
+            width: 48%;
+          }
+          
+          table {
+            min-width: 100%;
+            border: none;
+          }
+          
+          thead {
             display: none;
           }
-
-          th, td {
-            padding: 8px 10px;
-            font-size: 14px;
+          
+          tr {
+            display: block;
+            margin-bottom: 16px;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 12px;
           }
-
-          .delete-modal-content {
-            width: 95%;
-            padding: 15px;
+          
+          td {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid #f0f0f0;
           }
-
-          .delete-modal-buttons {
-            flex-direction: column;
+          
+          td:last-child {
+            border-bottom: none;
           }
-
-          .cancel-btn, .confirm-delete-btn {
-            width: 100%;
+          
+          td::before {
+            content: attr(data-label);
+            font-weight: 600;
+            color: #4a5568;
+            margin-right: 12px;
+            font-size: 0.85rem;
+          }
+          
+          .action-buttons {
+            justify-content: flex-end;
+          }
+          
+          .pagination {
+            gap: 4px;
+          }
+          
+          .pagination-btn {
+            min-width: 32px;
+            height: 32px;
+            padding: 4px 8px;
           }
         }
       `}</style>

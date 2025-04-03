@@ -1,38 +1,36 @@
-
-
-.dashboard-container {
+.dashboardContainer {
   display: flex;
   flex-wrap: wrap;
   gap: 20px;
   padding: 20px;
 }
 
-.calendar-section {
+.calendarSection {
   flex: 1;
   max-width: 400px;
   min-width: 300px;
 }
 
-.calendar-container {
+.calendarContainer {
   background: #fff;
   border-radius: 12px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   padding: 20px;
 }
 
-.ongoing-events-section {
+.ongoingEventsSection {
   flex: 2;
   max-width: 800px;
   min-width: 300px;
 }
 
-.ongoing-cards {
+.ongoingCards {
   display: flex;
   flex-direction: column;
   gap: 20px;
 }
 
-.ongoing-card {
+.ongoingCard {
   background: #fff;
   border-radius: 12px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
@@ -43,39 +41,39 @@
   transition: transform 0.3s ease, box-shadow 0.3s ease;
 }
 
-.ongoing-card:hover {
+.ongoingCard:hover {
   transform: translateY(-5px);
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15);
 }
 
-.events-image {
+.eventsImage {
   width: 80px;
   height: 80px;
   border-radius: 12px;
   object-fit: cover;
 }
 
-.event-details {
+.eventDetails {
   flex: 1;
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.event-details h3 {
+.eventDetails h3 {
   margin: 0;
   font-size: 20px;
   font-weight: 600;
   color: #333;
 }
 
-.event-details .category {
+.eventDetails .category {
   margin: 0;
   font-size: 14px;
   color: #666;
 }
 
-.view-event-button {
+.viewEventButton {
   background: #028248;
   color: #fff;
   border: none;
@@ -89,7 +87,7 @@
   transition: background 0.3s ease;
 }
 
-.view-event-button:hover {
+.viewEventButton:hover {
   background: #026c3d;
 }
 
@@ -97,12 +95,12 @@
   font-size: 16px;
 }
 
-.pagination-controls {
+.paginationControls {
   display: flex;
   gap: 10px;
 }
 
-.pagination-controls button {
+.paginationControls button {
   background: none;
   border: none;
   font-size: 1.5rem;
@@ -111,40 +109,47 @@
   color: #028248;
 }
 
-.pagination-controls button:disabled {
+.paginationControls button:disabled {
   color: #ccc;
   cursor: not-allowed;
 }
 
+.eventsHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+
 @media (max-width: 1024px) {
-  .dashboard-container {
+  .dashboardContainer {
     flex-direction: column;
     align-items: center;
   }
 
-  .calendar-section,
-  .ongoing-events-section {
+  .calendarSection,
+  .ongoingEventsSection {
     max-width: 100%;
   }
 }
 
 @media (max-width: 768px) {
-  .calendar-section {
+  .calendarSection {
     display: none;
   }
 
-  .ongoing-card {
+  .ongoingCard {
     flex-direction: column;
     align-items: flex-start;
     gap: 15px;
   }
 
-  .events-image {
+  .eventsImage {
     width: 60px;
     height: 60px;
   }
 
-  .view-event-button {
+  .viewEventButton {
     width: 100%;
     justify-content: center;
     padding: 8px 10px;
@@ -153,43 +158,36 @@
 }
 
 @media (max-width: 480px) {
-  .dashboard-container {
+  .dashboardContainer {
     padding: 10px;
     margin-bottom: 30px;
   }
 
-  .calendar-container,
-  .ongoing-card {
+  .calendarContainer,
+  .ongoingCard {
     padding: 10px;
   }
 
-  .event-details h3 {
+  .eventDetails h3 {
     font-size: 16px;
   }
 
-  .event-details .category {
+  .eventDetails .category {
     font-size: 12px;
   }
 
-  .view-event-button {
+  .viewEventButton {
     padding: 6px 8px;
     font-size: 11px;
     margin-top: -30px;
   }
 
-  .events-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    width: 100%;
-  }
-
-  .pagination-controls {
+  .paginationControls {
     margin-left: auto;
     gap: 5px;
   }
 
-  .pagination-controls button {
+  .paginationControls button {
     font-size: 1.2rem;
     padding: 3px;
   }
