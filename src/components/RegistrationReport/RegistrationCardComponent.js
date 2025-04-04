@@ -205,7 +205,7 @@ const RegistrationCardComponent = () => {
           justify-content: space-between;
           width: 100%;
           max-width: 310px;
-          // padding: 20px;
+          padding: 20px;
           border: 1px solid #e5e5e5;
           border-radius: 8px;
           background-color: #ffffff;
@@ -296,7 +296,7 @@ const RegistrationCardComponent = () => {
             flex: 1 1 calc(50% - 5px);
             max-width: calc(50% - 5px);
             padding: 10px; 
-            padding-right: 40px; 
+            padding-right: 35px; 
             padding-left: 30px; 
           }
           .card-row {
