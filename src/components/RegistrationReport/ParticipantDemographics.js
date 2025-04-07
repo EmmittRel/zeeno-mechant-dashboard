@@ -9,10 +9,9 @@ const ParticipantDemographics = () => {
   const { token } = useToken();
   const [loading, setLoading] = useState(true);
 
-  // Payment success checker - checks for status 'S' for all processors
   const checkPaymentSuccess = (payment) => {
     if (!payment) return false;
-    return payment.status === 'S'; // Only check for status 'S'
+    return payment.status === 'S'; 
   };
 
   // Extract eventId from URL (runs only once)
@@ -478,6 +477,7 @@ const ParticipantDemographics = () => {
         @media (max-width: 480px) {
           .participant-demographics-container {
             padding: 10px;
+             box-shadow: none;
           }
 
           .header {

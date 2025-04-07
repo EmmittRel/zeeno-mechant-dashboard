@@ -173,7 +173,7 @@ const RegistrationCardComponent = () => {
               <img src={card.image} alt={card.title} className="icon-img" />
             </div>
             <div className="card-content">
-              <h4 className="card-title">{card.title}</h4>
+              <h4 className="card-titlee">{card.title}</h4>
               <h2 className="card-value">{card.value}</h2>
             </div>
           </div>
@@ -209,7 +209,7 @@ const RegistrationCardComponent = () => {
           border: 1px solid #e5e5e5;
           border-radius: 8px;
           background-color: #ffffff;
-          box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+          // box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
           transform: translateY(20px);
           opacity: 0;
           animation: cardAppear 0.6s ease-in-out forwards;
@@ -247,7 +247,7 @@ const RegistrationCardComponent = () => {
           gap: 5px;
         }
 
-        .card-title {
+        .card-titlee {
           font-size: 16px;
           font-weight: 600;
           color: #4f4f4f;
@@ -280,7 +280,7 @@ const RegistrationCardComponent = () => {
             max-width: calc(50% - 10px);
             padding: 15px;
           }
-          .card-title { font-size: 12px; }
+          .card-titlee { font-size: 12px; }
           .card-value { font-size: 20px; }
         }
 
@@ -289,7 +289,7 @@ const RegistrationCardComponent = () => {
             display: grid;
             grid-template-columns: repeat(2, 1fr);
             gap: 10px;
-            padding: 0 20px; 
+            padding: 0 10px; 
             margin-top: 100px;
           }
           .card {
@@ -318,6 +318,7 @@ const RegistrationCardComponent = () => {
         .card-value{
           font-size: 14px;
         }
+         
 
         /* Styles for screens below 300px */
         @media (max-width: 300px) {

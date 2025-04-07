@@ -839,6 +839,7 @@ const TableComponent = () => {
         
         .pagination {
           margin-top: 24px;
+          // margin-bottom: 34px;
           display: flex;
           justify-content: center;
           align-items: center;
@@ -847,6 +848,7 @@ const TableComponent = () => {
         }
         
         .pagination-btn {
+        
           padding: 8px 12px;
           border: 1px solid #e2e8f0;
           background: white;
@@ -1027,6 +1029,7 @@ const TableComponent = () => {
             padding: 12px;
             box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
             margin-top: 30px;
+            margin-bottom: 64px;
           }
           
           .table-header {
@@ -1037,6 +1040,7 @@ const TableComponent = () => {
           .export-btn {
             width: 90%;
             justify-content: center;
+            // margin-bottom: 34px;
           }
           
           .table-controls {
