@@ -6,7 +6,8 @@ import styles from '../../assets/Contestant.module.css';
 const Contestant = ({ event_id, token }) => {
   const [state, setState] = useState({
     candidates: [],
-    error: null
+    error: null,
+    isLoading: true
   });
 
   const fetchAllPayments = useCallback(async () => {
@@ -52,12 +53,19 @@ const Contestant = ({ event_id, token }) => {
           return sum + calculateVotes(payment.amount, currency);
         }, 0);
 
-      return { ...contestant, votes: totalVotes };
+      return { 
+        ...contestant, 
+        votes: totalVotes,
+        // Pre-calculate formatted votes for better performance
+        formattedVotes: totalVotes.toLocaleString()
+      };
     });
   }, []);
 
   const fetchData = useCallback(async () => {
     try {
+      setState(prev => ({ ...prev, isLoading: true }));
+      
       const [contestants, payments] = await Promise.all([
         apiService.getContestants(event_id, token),
         fetchAllPayments()
@@ -67,28 +75,75 @@ const Contestant = ({ event_id, token }) => {
         candidates: processCandidates(contestants, payments)
           .sort((a, b) => b.votes - a.votes)
           .slice(0, 5),
-        error: null
+        error: null,
+        isLoading: false
       });
     } catch (error) {
       console.error('Error fetching contestant data:', error);
       setState({
         candidates: [],
-        error: "Failed to fetch data. Please try again."
+        error: "Failed to fetch data. Please try again.",
+        isLoading: false
       });
     }
   }, [event_id, token, fetchAllPayments, processCandidates]);
 
   useEffect(() => {
+    const abortController = new AbortController();
+    
     fetchData();
+    
+    return () => {
+      abortController.abort();
+    };
   }, [fetchData]);
+
+  // Skeleton loader for better UX
+  if (state.isLoading) {
+    return (
+      <div className={styles.candidateCard}>
+        <h3 className={styles.topH3}>Top Performing Candidates</h3>
+        <ul className={styles.candidateList}>
+          {[...Array(5)].map((_, index) => (
+            <li key={index} className={styles.candidateItem}>
+              <div className={styles.candidateInfo}>
+                <div className={`${styles.rankBadge} ${styles.skeleton}`}></div>
+                <div className={`${styles.candidateImage} ${styles.skeleton}`}></div>
+                <div className={styles.nameContainer}>
+                  <div className={`${styles.candidateName} ${styles.skeleton}`} style={{ width: `${Math.random() * 100 + 50}px` }}></div>
+                  <div className={`${styles.mobileVotes} ${styles.skeleton}`} style={{ width: '60px' }}></div>
+                </div>
+              </div>
+              <div className={`${styles.desktopVotes} ${styles.skeleton}`} style={{ width: '80px' }}></div>
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+  }
 
   if (state.error) {
     return (
-      <div className={styles.errorMessage}>
+      <div className={styles.errorMessage} role="alert">
         {state.error}
-        <button onClick={fetchData} className={styles.retryButton}>
+        <button 
+          onClick={fetchData} 
+          className={styles.retryButton}
+          aria-label="Retry loading data"
+        >
           Retry
         </button>
+      </div>
+    );
+  }
+
+  if (state.candidates.length === 0) {
+    return (
+      <div className={styles.candidateCard}>
+        <h3 className={styles.topH3}>Top Performing Candidates</h3>
+        <div className={styles.emptyState}>
+          No candidates available at the moment.
+        </div>
       </div>
     );
   }
@@ -98,23 +153,38 @@ const Contestant = ({ event_id, token }) => {
       <h3 className={styles.topH3}>Top Performing Candidates</h3>
       <ul className={styles.candidateList}>
         {state.candidates.map((candidate, index) => (
-          <li key={candidate.id} className={`${styles.candidateItem} ${styles[`rank${index + 1}`]}`}>
+          <li 
+            key={candidate.id} 
+            className={`${styles.candidateItem} ${styles[`rank${index + 1}`]}`}
+            aria-label={`Rank ${index + 1}: ${candidate.name} with ${candidate.votes} votes`}
+          >
             <div className={styles.candidateInfo}>
-              <div className={styles.rankBadge}>{index + 1}</div>
+              <div className={styles.rankBadge} aria-hidden="true">
+                {index + 1}
+              </div>
               <img
                 src={candidate.avatar || DEFAULT_AVATAR}
-                alt={candidate.name}
+                alt={`${candidate.name}'s profile`}
                 className={styles.candidateImage}
                 loading="lazy"
                 width="40"
                 height="40"
+                onError={(e) => {
+                  e.target.src = DEFAULT_AVATAR;
+                }}
               />
               <div className={styles.nameContainer}>
-                <span className={styles.candidateName}>{candidate.name}</span>
-                <span className={styles.mobileVotes}>{candidate.votes.toLocaleString()} Votes</span>
+                <span className={styles.candidateName} title={candidate.name}>
+                  {candidate.name}
+                </span>
+                <span className={styles.mobileVotes}>
+                  {candidate.formattedVotes} Votes
+                </span>
               </div>
             </div>
-            <span className={styles.desktopVotes}>{candidate.votes.toLocaleString()} Votes</span>
+            <span className={styles.desktopVotes}>
+              {candidate.formattedVotes} Votes
+            </span>
           </li>
         ))}
       </ul>

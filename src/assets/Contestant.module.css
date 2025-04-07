@@ -1,7 +1,7 @@
 .candidateCard {
     background-color: #f7f9fc;
     border-radius: 10px;
-    padding: 20px;
+    /* padding: 20px; */
     flex: 1;
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
     font-family: 'Poppins', sans-serif;
@@ -133,8 +133,11 @@
   }
   
   @media (max-width: 768px) {
+
+    
     .candidateCard {
       padding: 15px;
+      width: 110%;
     }
     
     .topH3 {

@@ -74,6 +74,8 @@
       flex-direction: column;
       padding: 0 15px;
       gap: 20px;
+      margin-left: -15px;
+      margin-right: 15px;
     }
     
     .chartCard {
