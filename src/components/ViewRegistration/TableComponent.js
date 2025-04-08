@@ -1136,7 +1136,7 @@ const TableComponent = () => {
           }
           
           .export-btn {
-            width: 100%;
+            width: 90%;
             justify-content: center;
           }
           
