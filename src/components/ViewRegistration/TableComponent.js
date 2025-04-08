@@ -8,7 +8,8 @@ import {
   FaTimes,
   FaSpinner,
   FaChevronLeft,
-  FaChevronRight
+  FaChevronRight,
+  FaFilter
 } from "react-icons/fa";
 import { FiLoader } from "react-icons/fi";
 import PopupModal from "./popupmodal";
@@ -38,13 +39,15 @@ const TableComponent = () => {
   const [isEventIdLoading, setIsEventIdLoading] = useState(true);
 
   const [filters, setFilters] = useState({
-    period: "",
     paymentStatus: "",
-    approvalStatus: "",
+    sortOrder: "newer" // newer or older
   });
 
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
+
+  // Mobile filter state
+  const [showMobileFilters, setShowMobileFilters] = useState(false);
 
   // Debounce search input
   useEffect(() => {
@@ -210,7 +213,7 @@ const TableComponent = () => {
     };
   }, [eventId, token, isEventIdLoading]);
 
-  // Apply filters and search when they change
+  // Apply filters, search and sorting when they change
   useEffect(() => {
     let result = [...data];
 
@@ -228,14 +231,16 @@ const TableComponent = () => {
       result = result.filter(row => row.paymentStatus === filters.paymentStatus);
     }
 
-    // Apply approval status filter
-    if (filters.approvalStatus) {
-      result = result.filter(row => row.status === filters.approvalStatus);
+    // Apply sorting
+    if (filters.sortOrder === "newer") {
+      result.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    } else {
+      result.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
     }
 
     setFilteredData(result);
     setCurrentPage(1);
-  }, [data, debouncedQuery, filters.paymentStatus, filters.approvalStatus]);
+  }, [data, debouncedQuery, filters.paymentStatus, filters.sortOrder]);
 
   const handleDeleteClick = (id) => {
     setDeleteCandidate(id);
@@ -392,6 +397,11 @@ const TableComponent = () => {
     setSearchQuery(e.target.value);
   };
 
+  // Toggle mobile filters
+  const toggleMobileFilters = () => {
+    setShowMobileFilters(!showMobileFilters);
+  };
+
   // Loading skeleton rows
   const renderLoadingRows = () => {
     return Array(itemsPerPage).fill(0).map((_, index) => (
@@ -458,7 +468,9 @@ const TableComponent = () => {
             onChange={handleSearchChange}
           />
         </div>
-        <div className="filter-dropdowns">
+        
+        {/* Desktop filters */}
+        <div className="filter-dropdowns desktop-filters">
           <select
             name="paymentStatus"
             value={filters.paymentStatus}
@@ -471,18 +483,59 @@ const TableComponent = () => {
             <option value="Failed">Failed</option>
           </select>
           <select
-            name="approvalStatus"
-            value={filters.approvalStatus}
+            name="sortOrder"
+            value={filters.sortOrder}
             onChange={handleFilterChange}
             className="filter-dropdown"
           >
-            <option value="">All Status</option>
-            <option value="Approved">Approved</option>
-            <option value="Rejected">Rejected</option>
-            <option value="Pending">Pending</option>
+            <option value="newer">Sort by: Newer</option>
+            <option value="older">Sort by: Older</option>
           </select>
         </div>
+        
+        {/* Mobile filter toggle */}
+        <button className="mobile-filter-toggle" onClick={toggleMobileFilters}>
+          <FaFilter /> Filters
+        </button>
       </div>
+
+      {/* Mobile filters dropdown */}
+      {showMobileFilters && (
+        <div className="mobile-filters-dropdown">
+          <div className="mobile-filter-group">
+            <label>Payment Status</label>
+            <select
+              name="paymentStatus"
+              value={filters.paymentStatus}
+              onChange={handleFilterChange}
+              className="filter-dropdown"
+            >
+              <option value="">All Payments</option>
+              <option value="Success">Success</option>
+              <option value="Pending">Pending</option>
+              <option value="Failed">Failed</option>
+            </select>
+          </div>
+          <div className="mobile-filter-group">
+            <label>Sort Order</label>
+            <select
+              name="sortOrder"
+              value={filters.sortOrder}
+              onChange={handleFilterChange}
+              className="filter-dropdown"
+            >
+              <option value="newer">Newer First</option>
+              <option value="older">Older First</option>
+            </select>
+          </div>
+          <button 
+            className="apply-filters-btn"
+            onClick={toggleMobileFilters}
+          >
+            Apply Filters
+          </button>
+        </div>
+      )}
 
       <div className="table-wrapper">
         <table>
@@ -839,7 +892,6 @@ const TableComponent = () => {
         
         .pagination {
           margin-top: 24px;
-          // margin-bottom: 34px;
           display: flex;
           justify-content: center;
           align-items: center;
@@ -848,7 +900,6 @@ const TableComponent = () => {
         }
         
         .pagination-btn {
-        
           padding: 8px 12px;
           border: 1px solid #e2e8f0;
           background: white;
@@ -1023,6 +1074,53 @@ const TableComponent = () => {
           cursor: not-allowed;
         }
         
+        /* Mobile Filter Styles */
+        .mobile-filter-toggle {
+          display: none;
+          padding: 8px 16px;
+          background-color: #f0f0f0;
+          border: none;
+          border-radius: 6px;
+          font-size: 14px;
+          cursor: pointer;
+          align-items: center;
+          gap: 8px;
+        }
+        
+        .mobile-filters-dropdown {
+          display: none;
+          background: white;
+          border-radius: 8px;
+          padding: 16px;
+          margin-bottom: 16px;
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+          flex-direction: column;
+          gap: 16px;
+        }
+        
+        .mobile-filter-group {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+        
+        .mobile-filter-group label {
+          font-size: 14px;
+          font-weight: 500;
+          color: #4a5568;
+        }
+        
+        .apply-filters-btn {
+          padding: 10px;
+          background-color: #4299e1;
+          color: white;
+          border: none;
+          border-radius: 6px;
+          font-weight: 500;
+          cursor: pointer;
+          margin-top: 8px;
+        }
+        
         /* Mobile responsiveness */
         @media (max-width: 768px) {
           .table-container {
@@ -1038,23 +1136,28 @@ const TableComponent = () => {
           }
           
           .export-btn {
-            width: 90%;
+            width: 100%;
             justify-content: center;
-            // margin-bottom: 34px;
           }
           
           .table-controls {
             flex-direction: column;
             align-items: stretch;
+            gap: 12px;
           }
           
-          .filter-dropdowns {
+          .desktop-filters {
+            display: none;
+          }
+          
+          .mobile-filter-toggle {
+            display: flex;
             width: 100%;
-            justify-content: space-between;
+            justify-content: center;
           }
           
-          .filter-dropdown {
-            width: 48%;
+          .mobile-filters-dropdown {
+            display: flex;
           }
           
           table {
@@ -1106,6 +1209,16 @@ const TableComponent = () => {
             min-width: 32px;
             height: 32px;
             padding: 4px 8px;
+          }
+        }
+        
+        @media (min-width: 769px) {
+          .mobile-filters-dropdown {
+            display: none !important;
+          }
+          
+          .mobile-filter-toggle {
+            display: none !important;
           }
         }
       `}</style>
