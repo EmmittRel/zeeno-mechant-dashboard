@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import "../../assets/table.css";
 import { useToken } from "../../context/TokenContext";
 import { useParams } from "react-router-dom";
@@ -26,12 +26,14 @@ const API_CONFIG = {
 const apiService = {
   get: async (endpoint, token, params = {}) => {
     const url = `${API_CONFIG.BASE_URL}${endpoint}`;
-    const response = await fetch(url, {
+    const queryParams = new URLSearchParams(params).toString();
+    const fullUrl = queryParams ? `${url}?${queryParams}` : url;
+    
+    const response = await fetch(fullUrl, {
       headers: { 
         'Authorization': `Bearer ${token}`,
         'Accept': 'application/json'
-      },
-      ...(Object.keys(params).length && { params })
+      }
     });
     if (!response.ok) throw new Error(`API request failed: ${response.status}`);
     return response.json();
@@ -78,6 +80,39 @@ const apiService = {
     });
     if (!response.ok) throw new Error(`API request failed: ${response.status}`);
     return response.json();
+  },
+
+  // Helper methods specific to our needs
+  getContestants: async (event_id, token) => {
+    return apiService.get(API_CONFIG.ENDPOINTS.CONTESTANTS, token, { event_id });
+  },
+
+  getPaymentIntents: async (event_id, token) => {
+    return apiService.get(API_CONFIG.ENDPOINTS.PAYMENT_INTENTS, token, { event_id });
+  },
+
+  getQrIntents: async (event_id, token) => {
+    return apiService.get(API_CONFIG.ENDPOINTS.QR_INTENTS, token, { event_id });
+  },
+
+  getNqrTransactions: async (token, end_date, start_date = API_CONFIG.DEFAULT_DATES.START_DATE) => {
+    return apiService.post(
+      API_CONFIG.ENDPOINTS.NQR_TRANSACTIONS, 
+      token, 
+      { start_date, end_date }
+    );
+  }
+};
+
+// Helper function to extract intent_id from NQR transaction
+const getIntentIdFromNQR = (addenda1, addenda2) => {
+  try {
+    const combined = `${addenda1}-${addenda2}`;
+    const hexMatch = combined.match(/vnpr-([a-f0-9]+)/i);
+    return hexMatch?.[1] ? parseInt(hexMatch[1], 16) : null;
+  } catch (error) {
+    console.error('Error extracting intent_id from NQR:', error);
+    return null;
   }
 };
 
@@ -98,126 +133,97 @@ const CandidateTable = () => {
     key: null,
     direction: "asc",
   });
-  const [nqrTransactions, setNqrTransactions] = useState([]);
   const itemsPerPage = 10;
 
   const { token } = useToken();
   const { event_id } = useParams();
 
-  // Helper function to extract intent_id from NQR transaction
-  const getIntentIdFromNQR = (addenda1, addenda2) => {
+  const fetchAllPayments = useCallback(async () => {
+    const today = new Date().toISOString().split('T')[0];
     try {
-      const combined = `${addenda1}-${addenda2}`;
-      const hexMatch = combined.match(/vnpr-([a-f0-9]+)/i);
-      return hexMatch?.[1] ? parseInt(hexMatch[1], 16) : null;
+      const [regularPayments, qrPayments, nqrData] = await Promise.all([
+        apiService.getPaymentIntents(event_id, token),
+        apiService.getQrIntents(event_id, token),
+        apiService.getNqrTransactions(token, today)
+      ]);
+
+      return [
+        ...regularPayments.filter(p => p.status === 'S'),
+        ...qrPayments.filter(p => p.status === 'S' && p.processor?.toUpperCase() === "QR"),
+        ...(nqrData.transactions?.responseBody?.filter(txn => txn.debitStatus === '000') || []).map(txn => ({
+          intent_id: getIntentIdFromNQR(txn.addenda1, txn.addenda2),
+          amount: txn.amount,
+          currency: 'NPR',
+          processor: 'NQR',
+          status: 'S'
+        }))
+      ];
     } catch (error) {
-      console.error('Error extracting intent_id from NQR:', error);
-      return null;
+      console.error('Error fetching payments:', error);
+      throw error;
     }
-  };
+  }, [event_id, token]);
+
+  const processCandidates = useCallback((contestants, payments) => {
+    return contestants.map(contestant => {
+      const totalVotes = payments
+        .filter(p => p.intent_id?.toString() === contestant.id.toString())
+        .reduce((sum, payment) => {
+          const processor = payment.processor?.toUpperCase();
+          let currency = payment.currency?.toUpperCase() || 'USD';
+
+          if (["ESEWA", "KHALTI", "FONEPAY", "PRABHUPAY", "QR", "NQR"].includes(processor)) {
+            currency = 'NPR';
+          } else if (["PHONEPE", "PAYU"].includes(processor)) {
+            currency = 'INR';
+          } else if (processor === "STRIPE") {
+            currency = payment.currency?.toUpperCase() || 'USD';
+          }
+
+          return sum + calculateVotes(payment.amount, currency);
+        }, 0);
+
+      return { 
+        ...contestant, 
+        votes: totalVotes,
+        formattedVotes: totalVotes.toLocaleString()
+      };
+    });
+  }, []);
+
+  const fetchData = useCallback(async () => {
+    if (!event_id || !token) {
+      setError(!event_id ? "Event ID is missing" : "Token not found");
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const [contestants, payments, events] = await Promise.all([
+        apiService.getContestants(event_id, token),
+        fetchAllPayments(),
+        apiService.get(API_CONFIG.ENDPOINTS.EVENTS, token)
+      ]);
+
+      // Set payment info from event data
+      const event = events.find(e => e.id === parseInt(event_id));
+      if (!event) throw new Error("Event not found");
+      setPaymentInfo(event.payment_info);
+
+      setData(processCandidates(contestants, payments));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [event_id, token, fetchAllPayments, processCandidates]);
 
   useEffect(() => {
-    const fetchData = async () => {
-      if (!event_id) {
-        setError("Event ID is missing. Please provide a valid event ID.");
-        setLoading(false);
-        return;
-      }
-
-      if (!token) {
-        setError("Token not found. Please log in again.");
-        setLoading(false);
-        return;
-      }
-
-      setLoading(true);
-      setError(null);
-
-      try {
-        // Fetch all data in parallel
-        const [events, nqrData, contestants, paymentIntents, qrPaymentIntents] = await Promise.all([
-          apiService.get(API_CONFIG.ENDPOINTS.EVENTS, token),
-          apiService.post(
-            API_CONFIG.ENDPOINTS.NQR_TRANSACTIONS, 
-            token, 
-            {
-              'start_date': API_CONFIG.DEFAULT_DATES.START_DATE,
-              'end_date': new Date().toISOString().split('T')[0]
-            }
-          ),
-          apiService.get(API_CONFIG.ENDPOINTS.CONTESTANTS, token, { event_id }),
-          apiService.get(API_CONFIG.ENDPOINTS.PAYMENT_INTENTS, token, { event_id }),
-          apiService.get(API_CONFIG.ENDPOINTS.QR_INTENTS, token, { event_id })
-        ]);
-
-        // Set payment info from event data
-        const event = events.find(e => e.id === parseInt(event_id));
-        if (!event) throw new Error("Event not found");
-        setPaymentInfo(event.payment_info);
-
-        // Filter QR payments to exclude NQR
-        const filteredQrPaymentIntents = qrPaymentIntents.filter(
-          intent => intent.processor?.toUpperCase() === "QR"
-        );
-
-        // Set NQR transactions
-        setNqrTransactions(nqrData.transactions?.responseBody?.filter(txn => txn.debitStatus === '000') || []);
-
-        // Combine all payment sources
-        const allPaymentIntents = [
-          ...paymentIntents,
-          ...filteredQrPaymentIntents,
-          ...nqrTransactions.map(txn => ({
-            intent_id: getIntentIdFromNQR(txn.addenda1, txn.addenda2),
-            amount: txn.amount,
-            currency: 'NPR',
-            processor: 'NQR',
-            status: 'S'
-          }))
-        ];
-
-        // Filter successful transactions
-        const successfulPaymentIntents = allPaymentIntents.filter(
-          (intent) => intent.status === 'S'
-        );
-
-        // Calculate votes for each contestant
-        const candidatesWithVotes = contestants.map((contestant) => {
-          let totalVotes = 0;
-
-          successfulPaymentIntents.forEach((intent) => {
-            if (intent.intent_id?.toString() === contestant.id.toString()) {
-              let currency = 'USD';
-              const processor = intent.processor?.toUpperCase();
-
-              if (["ESEWA", "KHALTI", "FONEPAY", "PRABHUPAY", "QR", "NQR"].includes(processor)) {
-                currency = 'NPR';
-              } else if (["PHONEPE", "PAYU"].includes(processor)) {
-                currency = 'INR';
-              } else if (processor === "STRIPE") {
-                currency = intent.currency?.toUpperCase() || 'USD';
-              }
-
-              totalVotes += calculateVotes(intent.amount, currency);
-            }
-          });
-
-          return {
-            ...contestant,
-            votes: totalVotes,
-          };
-        });
-
-        setData(candidatesWithVotes);
-      } catch (err) {
-        setError(err.message);
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchData();
-  }, [event_id, token, paymentInfo]);
+  }, [fetchData]);
 
   // Sorting logic
   const sortedData = React.useMemo(() => {
@@ -275,10 +281,9 @@ const CandidateTable = () => {
         updatedCandidate
       );
 
-      const updatedData = data.map((candidate) =>
+      setData(data.map((candidate) =>
         candidate.id === updatedCandidate.id ? updatedCandidate : candidate
-      );
-      setData(updatedData);
+      ));
       alert("Candidate updated successfully.");
       handleCloseModal();
     } catch (err) {
@@ -365,120 +370,117 @@ const CandidateTable = () => {
           <h3>Candidate List</h3>
         </div>
         <div
-  className="actions"
-  style={{
-    display: "flex",
-    flexWrap: "wrap", 
-    alignItems: "center",
-    gap: "15px",
-    backgroundColor: "#f8f9fa",
-    padding: "10px",
-    borderRadius: "8px",
-    boxShadow: "0 2px 4px rgba(0, 0, 0, 0.1)",
-  }}
->
+          className="actions"
+          style={{
+            display: "flex",
+            flexWrap: "wrap", 
+            alignItems: "center",
+            gap: "15px",
+            backgroundColor: "#f8f9fa",
+            padding: "10px",
+            borderRadius: "8px",
+            boxShadow: "0 2px 4px rgba(0, 0, 0, 0.1)",
+          }}
+        >
+          <div style={{
+            display: "flex",
+            flexWrap: "nowrap", 
+            gap: "15px",
+            alignItems: "center",
+            minWidth: "fit-content" 
+          }}>
+            {/* Sort by Dropdown */}
+            <div style={{ position: "relative", minWidth: "120px" }}>
+              <select
+                id="sort-by"
+                onChange={(e) => requestSort(e.target.value)}
+                value={sortConfig.key || ""}
+                style={{
+                  padding: "8px 12px",
+                  paddingRight: "32px",
+                  borderRadius: "6px",
+                  border: "1px solid #ced4da",
+                  backgroundColor: "#fff",
+                  fontSize: "14px",
+                  color: "#495057",
+                  cursor: "pointer",
+                  outline: "none",
+                  transition: "border-color 0.3s ease",
+                  appearance: "none",
+                  WebkitAppearance: "none",
+                  MozAppearance: "none",
+                  width: "100%",
+                }}
+              >
+                <option value="">Sort By</option>
+                <option value="name">Name</option>
+                <option value="misc_kv">C.No.</option>
+                <option value="votes">Votes</option>
+              </select>
+              <FaSortAmountDown 
+                style={{
+                  position: "absolute",
+                  right: "12px",
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  fontSize: "14px",
+                  color: "#495057",
+                  pointerEvents: "none",
+                }}
+              />
+            </div>
 
-  <div style={{
-    display: "flex",
-    flexWrap: "nowrap", 
-    gap: "15px",
-    alignItems: "center",
-    minWidth: "fit-content" 
-  }}>
-    {/* Sort by Dropdown */}
-    <div style={{ position: "relative", minWidth: "120px" }}>
-      <select
-        id="sort-by"
-        onChange={(e) => requestSort(e.target.value)}
-        value={sortConfig.key || ""}
-        style={{
-          padding: "8px 12px",
-          paddingRight: "32px",
-          borderRadius: "6px",
-          border: "1px solid #ced4da",
-          backgroundColor: "#fff",
-          fontSize: "14px",
-          color: "#495057",
-          cursor: "pointer",
-          outline: "none",
-          transition: "border-color 0.3s ease",
-          appearance: "none",
-          WebkitAppearance: "none",
-          MozAppearance: "none",
-          width: "100%",
-        }}
-      >
-        <option value="">Sort By</option>
-        <option value="name">Name</option>
-        <option value="misc_kv">C.No.</option>
-        <option value="votes">Votes</option>
-      </select>
-      <FaSortAmountDown 
-        style={{
-          position: "absolute",
-          right: "12px",
-          top: "50%",
-          transform: "translateY(-50%)",
-          fontSize: "14px",
-          color: "#495057",
-          pointerEvents: "none",
-        }}
-      />
-    </div>
+            {/* Ascending/Descending Button */}
+            <button
+              onClick={() =>
+                setSortConfig({
+                  ...sortConfig,
+                  direction: sortConfig.direction === "asc" ? "desc" : "asc",
+                })
+              }
+              style={{
+                padding: "8px 12px",
+                borderRadius: "6px",
+                border: "1px solid #ced4da",
+                backgroundColor: "#fff",
+                fontSize: "14px",
+                color: "#495057",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                transition: "background-color 0.3s ease, border-color 0.3s ease",
+                whiteSpace: "nowrap",
+              }}
+            >
+              <FaSort style={{ fontSize: "14px" }} />
+              {sortConfig.direction === "asc" ? "Ascending" : "Descending"}
+            </button>
+          </div>
+        </div>
 
-    {/* Ascending/Descending Button */}
-    <button
-      onClick={() =>
-        setSortConfig({
-          ...sortConfig,
-          direction: sortConfig.direction === "asc" ? "desc" : "asc",
-        })
-      }
-      style={{
-        padding: "8px 12px",
-        borderRadius: "6px",
-        border: "1px solid #ced4da",
-        backgroundColor: "#fff",
-        fontSize: "14px",
-        color: "#495057",
-        cursor: "pointer",
-        display: "flex",
-        alignItems: "center",
-        gap: "8px",
-        transition: "background-color 0.3s ease, border-color 0.3s ease",
-        whiteSpace: "nowrap",
-      }}
-    >
-      <FaSort style={{ fontSize: "14px" }} />
-      {sortConfig.direction === "asc" ? "Ascending" : "Descending"}
-    </button>
-  </div>
-
- 
-</div>
-
- <button
-    onClick={handleExport}
-    title="Export"
-    className="icon-btn export-btn"
-    style={{
-      padding: "8px 12px",
-      borderRadius: "6px",
-      border: "1px solid #ced4da",
-      backgroundColor: "#028248",
-      color: "white",
-      cursor: "pointer",
-      display: "flex",
-      alignItems: "center",
-      gap: "8px",
-      transition: "background-color 0.3s ease",
-      whiteSpace: "nowrap",
-      marginLeft: "30px",
-    }}
-  >
-    <FaDownload style={{ fontSize: "14px" }} />
-    Export
-  </button>
+        <button
+          onClick={handleExport}
+          title="Export"
+          className="icon-btn export-btn"
+          style={{
+            padding: "8px 12px",
+            borderRadius: "6px",
+            border: "1px solid #ced4da",
+            backgroundColor: "#028248",
+            color: "white",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            transition: "background-color 0.3s ease",
+            whiteSpace: "nowrap",
+            marginLeft: "30px",
+          }}
+        >
+          <FaDownload style={{ fontSize: "14px" }} />
+          Export
+        </button>
       </div>
 
       {/* Table */}
@@ -530,7 +532,7 @@ const CandidateTable = () => {
                       {statusMapping[candidate.status] || "Unknown"}
                     </span>
                   </td>
-                  <td>{candidate.votes.toLocaleString()}</td>
+                  <td>{candidate.formattedVotes || candidate.votes.toLocaleString()}</td>
                   <td>
                     <div className="action-icons">
                       <button

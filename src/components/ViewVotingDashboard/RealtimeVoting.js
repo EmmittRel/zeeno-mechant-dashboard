@@ -4,7 +4,6 @@ import { FiLoader } from 'react-icons/fi';
 import ReactCountryFlag from 'react-country-flag';
 import { useToken } from '../../context/TokenContext';
 import { calculateVotes } from '../AmountCalculator';
-import useNQRProcessor from '../useNQRProcessor';
 
 // API Configuration
 const API_CONFIG = {
@@ -36,6 +35,105 @@ const statusLabel = {
   C: { label: 'Cancelled', color: '#6C757D', icon: '⊘' },
 };
 
+// Helper function to format NQR date (assuming format: "YYYY-MM-DD HH:mm:ss")
+const formatNQRDate = (dateString) => {
+  if (!dateString) return 'N/A';
+  
+  try {
+    const [datePart, timePart] = dateString.split(' ');
+    const [year, month, day] = datePart.split('-');
+    const [hours, minutes] = timePart.split(':');
+    
+    const date = new Date(year, month - 1, day, hours, minutes);
+    const formattedMonth = date.toLocaleString('en-US', { month: 'short' });
+    const formattedHours = date.getHours() % 12 || 12;
+    const period = date.getHours() >= 12 ? 'PM' : 'AM';
+    
+    return `${formattedMonth} ${day}, ${formattedHours}:${minutes} ${period}`;
+  } catch (e) {
+    console.error('Error formatting NQR date:', e);
+    return dateString; // Return original if formatting fails
+  }
+};
+
+// Custom hook for processing NQR transactions
+const useNQRProcessor = (token, event_id, contestants) => {
+  const [nqrData, setNqrData] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const getIntentIdFromNQR = useCallback((addenda1, addenda2) => {
+    const combined = `${addenda1}-${addenda2}`;
+    const hexMatch = combined.match(/vnpr-([a-f0-9]+)/i);
+    return hexMatch?.[1] ? parseInt(hexMatch[1], 16) : null;
+  }, []);
+
+  useEffect(() => {
+    const fetchNQRData = async () => {
+      if (!token || !event_id || !contestants.length) return;
+      
+      setLoading(true);
+      try {
+        const today = new Date().toISOString().split('T')[0];
+        const response = await fetch(`${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.NQR_TRANSACTIONS}`, {
+          method: 'POST',
+          headers: {
+            ...API_CONFIG.DEFAULT_HEADERS,
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            start_date: '2025-03-20',
+            end_date: today
+          })
+        });
+
+        if (!response.ok) throw new Error('NQR fetch failed');
+        
+        const data = await response.json();
+        
+        // Process and filter NQR transactions
+        const processed = (data.transactions?.responseBody || [])
+          .filter(txn => txn.debitStatus === '000') // Successful transactions
+          .map(txn => {
+            const intentId = getIntentIdFromNQR(txn.addenda1, txn.addenda2);
+            const contestant = contestants.find(c => c.id.toString() === intentId?.toString());
+            
+            // Extract name and phone from creditorName (format: "NAME - MOBILE")
+            const creditorParts = txn.creditorName?.split(' - ') || [];
+            const name = creditorParts[0] || 'N/A';
+            const phone = creditorParts[1] || 'N/A';
+            
+            return {
+              name,
+              email: 'N/A',
+              phone,
+              createdAt: txn.transactionDate,
+              formattedCreatedAt: formatNQRDate(txn.transactionDate),
+              amount: parseFloat(txn.amount),
+              status: { label: 'Success', color: '#28A745', icon: '✓' },
+              paymentType: 'NepalQR',
+              votes: calculateVotes(parseFloat(txn.amount), 'NPR'), // Divide by 10 for NPR
+              currency: 'NPR',
+              contestantName: contestant?.name || 'Unknown',
+              intent_id: intentId,
+              id: `nqr-${txn.transactionId}`
+            };
+          })
+          .filter(item => item.contestantName !== 'Unknown'); // Only include matched contestants
+
+        setNqrData(processed);
+      } catch (error) {
+        console.error('NQR processing error:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchNQRData();
+  }, [token, event_id, contestants, getIntentIdFromNQR]);
+
+  return { nqrData, loading };
+};
+
 const RealtimeVoting = ({ id: event_id }) => {
   const { token } = useToken();
   const [data, setData] = useState([]);
@@ -45,7 +143,7 @@ const RealtimeVoting = ({ id: event_id }) => {
   const [loading, setLoading] = useState(false);
   const rowsPerPage = 10;
 
-  // Custom hook for NQR processing
+  // Use the NQR processor hook
   const { nqrData: nqrTransactions, loading: nqrLoading } = useNQRProcessor(token, event_id, contestants);
 
   // API call helper function
@@ -161,7 +259,8 @@ const RealtimeVoting = ({ id: event_id }) => {
           votes,
           currency,
           contestantName,
-          id: `${item.created_at}-${Math.random().toString(36).substr(2, 9)}`
+          id: `${item.created_at}-${Math.random().toString(36).substr(2, 9)}`,
+          intent_id: item.intent_id
         };
       });
   }, [event_id, contestants, formatDate]);
@@ -188,7 +287,7 @@ const RealtimeVoting = ({ id: event_id }) => {
           )
         ]);
 
-        // Combine all data
+        // Combine all data sources
         const combinedData = [
           ...processedRegularData,
           ...processedQRData,
@@ -286,25 +385,6 @@ const RealtimeVoting = ({ id: event_id }) => {
         </button>
       </div>
 
-      {/* <div className="stats-summary">
-        <div className="stat-card">
-          <div className="stat-value">{data.length}</div>
-          <div className="stat-label">Total Votes</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-value">
-            {data.reduce((sum, item) => sum + item.votes, 0).toLocaleString()}
-          </div>
-          <div className="stat-label">Total Vote Count</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-value">
-            {new Set(data.map(item => item.currency)).size}
-          </div>
-          <div className="stat-label">Currencies</div>
-        </div>
-      </div> */}
-
       <div className="table-wrapper">
         <table>
           <thead>
@@ -328,7 +408,6 @@ const RealtimeVoting = ({ id: event_id }) => {
                   <td data-label="Voter">
                     <div className="voter-info">
                       <div className="voter-name">{row.name}</div>
-                      {/* <div className="voter-email">{row.email}</div> */}
                     </div>
                   </td>
                   <td data-label="Contestant">{row.contestantName}</td>
@@ -429,7 +508,6 @@ const RealtimeVoting = ({ id: event_id }) => {
           padding: 20px;
           background: #fff;
           border-radius: 12px;
-          // box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
         }
         
         .table-header {
@@ -441,11 +519,11 @@ const RealtimeVoting = ({ id: event_id }) => {
           gap: 16px;
         }
         
-        .table-header h3 {
-          font-size: 1.5rem;
+        .top-h3 {
+          font-size: 1.2rem;
+          color: #333;
           font-weight: 600;
-          color: #1a1a1a;
-          margin: 0;
+          text-align: left;
         }
         
         .export-btn {
@@ -474,40 +552,10 @@ const RealtimeVoting = ({ id: event_id }) => {
           opacity: 0.7;
         }
         
-        .stats-summary {
-          display: flex;
-          gap: 16px;
-          margin-bottom: 24px;
-          flex-wrap: wrap;
-        }
-        
-        .stat-card {
-          flex: 1;
-          min-width: 150px;
-          background: #f8f9fa;
-          border-radius: 8px;
-          padding: 16px;
-          box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-        }
-        
-        .stat-value {
-          font-size: 1.5rem;
-          font-weight: 700;
-          color: #2c3e50;
-          margin-bottom: 4px;
-        }
-        
-        .stat-label {
-          font-size: 0.85rem;
-          color: #7f8c8d;
-          font-weight: 500;
-        }
-        
         .table-wrapper {
           overflow-x: auto;
           -webkit-overflow-scrolling: touch;
           border-radius: 8px;
-          // border: 1px solid #e0e0e0;
         }
         
         table {
@@ -544,12 +592,6 @@ const RealtimeVoting = ({ id: event_id }) => {
         
         .voter-name {
           font-weight: 500;
-        }
-        
-        .voter-email {
-          font-size: 0.8rem;
-          color: #718096;
-          margin-top: 2px;
         }
         
         .votes-cell {
@@ -663,14 +705,6 @@ const RealtimeVoting = ({ id: event_id }) => {
           animation: spin 1s linear infinite;
         }
         
-         .top-h3 {
-            font-size: 1.2rem;
-            // margin-bottom: 20px;
-            color: #333;
-            font-weight: 600;
-            text-align: left;
-          }
-
         @keyframes spin {
           0% { transform: rotate(0deg); }
           100% { transform: rotate(360deg); }
@@ -679,44 +713,23 @@ const RealtimeVoting = ({ id: event_id }) => {
         /* Mobile responsiveness */
         @media (max-width: 768px) {
           .table-container {
-            // padding: 12px;
-          box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
-          margin-top: 30px;
-          }
-
-           .top-h3 {
-            font-size: 1.2rem;
-         
-            color: #333;
-            font-weight: 600;
-            text-align: left;
+            padding: 12px;
+            margin-top: 30px;
           }
           
           .table-header {
             flex-direction: column;
             align-items: flex-start;
-            
           }
           
           .export-btn {
             display: none;
           }
           
-          .stats-summary {
-            flex-direction: column;
-            gap: 12px;
-          }
-          
-          .stat-card {
-            min-width: 100%;
-          }
-          
           table {
             min-width: 100%;
             border: none;
           }
-
-          
           
           thead {
             display: none;
@@ -763,7 +776,6 @@ const RealtimeVoting = ({ id: event_id }) => {
             height: 32px;
             padding: 4px 8px;
           }
-
         }
       `}</style>
     </div>
