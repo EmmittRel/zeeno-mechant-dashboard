@@ -86,11 +86,13 @@ const useNQRProcessor = (token, event_id, contestants) => {
       const nqrTransactions = await fetchNQRTransactions();
       
       const processedData = nqrTransactions
-        .filter(txn => txn.debitStatus === '000') 
+        .filter(txn => txn.debitStatus === '000') // Only successful transactions
         .map(txn => {
           const intentId = getIntentIdFromNQR(txn.addenda1, txn.addenda2);
           const contestant = contestants.find(c => c.id === intentId);
-          const contestantName = contestant ? contestant.name : 'Unknown';
+          
+          // Skip if contestant is not found
+          if (!contestant) return null;
           
           return {
             name: txn.payerName,
@@ -103,9 +105,10 @@ const useNQRProcessor = (token, event_id, contestants) => {
             paymentType: 'NepalPayQR',
             votes: calculateVotes(txn.amount, 'NPR'),
             currency: 'NPR',
-            contestantName: contestantName,
+            contestantName: contestant.name,
           };
-        });
+        })
+        .filter(item => item !== null); // Remove null entries (unknown contestants)
 
       setNqrData(processedData);
     } catch (err) {

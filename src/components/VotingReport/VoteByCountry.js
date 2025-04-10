@@ -10,6 +10,7 @@ const API_CONFIG = {
   BASE_URL: "https://auth.zeenopay.com",
   ENDPOINTS: {
     EVENTS: "/events/",
+    CONTESTANTS: "/events/contestants/",
     PAYMENT_INTENTS: "/payments/intents/",
     QR_INTENTS: "/payments/qr/intents",
     NQR_TRANSACTIONS: "/payments/qr/transactions/static"
@@ -22,13 +23,13 @@ const API_CONFIG = {
 // API Service
 const apiService = {
   get: async (endpoint, token, params = {}) => {
-    const url = `${API_CONFIG.BASE_URL}${endpoint}`;
+    const queryString = new URLSearchParams(params).toString();
+    const url = `${API_CONFIG.BASE_URL}${endpoint}${queryString ? `?${queryString}` : ''}`;
     const response = await fetch(url, {
       headers: { 
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'
-      },
-      ...(Object.keys(params).length && { params })
+      }
     });
     if (!response.ok) throw new Error(`API request failed: ${response.status}`);
     return response.json();
@@ -63,12 +64,25 @@ const VoteByCountry = () => {
   const indiaProcessors = ["PHONEPE"];
   const internationalProcessors = ["PAYU", "STRIPE"];
 
-  // Function to extract intent_id from NQR transaction
+  // Enhanced function to extract intent_id from NQR transaction
   const getIntentIdFromNQR = (addenda1, addenda2) => {
     try {
-      const combined = `${addenda1}-${addenda2}`;
+      // Combine both addenda fields
+      const combined = `${addenda1 || ''}-${addenda2 || ''}`;
+      
+      // Try to find hex pattern
       const hexMatch = combined.match(/vnpr-([a-f0-9]+)/i);
-      return hexMatch?.[1] ? parseInt(hexMatch[1], 16) : null;
+      if (hexMatch?.[1]) {
+        return parseInt(hexMatch[1], 16);
+      }
+      
+      // Alternative pattern matching if the above fails
+      const altMatch = combined.match(/(\d+)/);
+      if (altMatch?.[1]) {
+        return parseInt(altMatch[1], 10);
+      }
+      
+      return null;
     } catch (error) {
       console.error('Error extracting intent_id from NQR:', error);
       return null;
@@ -80,17 +94,10 @@ const VoteByCountry = () => {
       try {
         setIsLoading(true);
         
-        // Fetch all data in parallel
-        const [events, nqrData, regularPayments, qrPayments] = await Promise.all([
+        // Fetch all required data
+        const [events, contestants, regularPayments, qrPayments] = await Promise.all([
           apiService.get(API_CONFIG.ENDPOINTS.EVENTS, token),
-          apiService.post(
-            API_CONFIG.ENDPOINTS.NQR_TRANSACTIONS, 
-            token, 
-            {
-              'start_date': API_CONFIG.DEFAULT_DATES.START_DATE,
-              'end_date': new Date().toISOString().split('T')[0]
-            }
-          ),
+          apiService.get(API_CONFIG.ENDPOINTS.CONTESTANTS, token, { event_id }),
           apiService.get(API_CONFIG.ENDPOINTS.PAYMENT_INTENTS, token, { event_id }),
           apiService.get(API_CONFIG.ENDPOINTS.QR_INTENTS, token, { event_id })
         ]);
@@ -99,26 +106,75 @@ const VoteByCountry = () => {
         const event = events.find(e => e.id === parseInt(event_id));
         if (event) setPaymentInfo(event.payment_info);
 
-        // Filter QR payments to exclude NQR
-        const filteredQrPayments = qrPayments.filter(
-          intent => intent.processor?.toUpperCase() === "QR"
-        );
+        // Create contestant map for quick lookup
+        const contestantMap = contestants.reduce((map, contestant) => {
+          map[contestant.id] = contestant;
+          return map;
+        }, {});
 
-        // Combine all payment sources
-        const allPaymentIntents = [
-          ...regularPayments, 
-          ...filteredQrPayments,
-          ...(nqrData.transactions?.responseBody?.filter(txn => txn.debitStatus === '000') || [])
+        // Filter and process regular payments
+        const filteredRegularPayments = regularPayments
+          .filter(payment => payment.intent_id && contestantMap[payment.intent_id])
+          .map(payment => ({
+            ...payment,
+            currency: payment.currency || 'USD' // Default currency
+          }));
+
+        // Filter and process QR payments (excluding NQR)
+        const filteredQRPayments = qrPayments
+          .filter(payment => 
+            payment.processor?.toUpperCase() === "QR" && 
+            payment.intent_id && 
+            contestantMap[payment.intent_id]
+          )
+          .map(payment => ({
+            ...payment,
+            currency: 'NPR' // QR payments are always NPR
+          }));
+
+        // Try to fetch NQR transactions if needed
+        let nqrTransactions = [];
+        try {
+          const today = new Date().toISOString().split('T')[0];
+          const nqrData = await apiService.post(
+            API_CONFIG.ENDPOINTS.NQR_TRANSACTIONS, 
+            token, 
+            {
+              'start_date': API_CONFIG.DEFAULT_DATES.START_DATE,
+              'end_date': today
+            }
+          );
+
+          nqrTransactions = (nqrData.transactions?.responseBody || [])
+            .filter(txn => txn.debitStatus === '000') // Successful transactions only
+            .map(txn => {
+              const intent_id = getIntentIdFromNQR(txn.addenda1, txn.addenda2);
+              return {
+                ...txn,
+                intent_id,
+                contestant: intent_id ? contestantMap[intent_id] : null
+              };
+            })
+            .filter(txn => txn.intent_id && txn.contestant)
             .map(txn => ({
-              intent_id: getIntentIdFromNQR(txn.addenda1, txn.addenda2),
+              intent_id: txn.intent_id,
               amount: txn.amount,
               processor: 'NQR',
               status: 'S',
               currency: 'NPR'
-            }))
+            }));
+        } catch (error) {
+          console.error("Error fetching NQR transactions:", error);
+        }
+
+        // Combine all payment sources
+        const allPaymentIntents = [
+          ...filteredRegularPayments,
+          ...filteredQRPayments,
+          ...nqrTransactions
         ];
 
-        // Process data
+        // Process the voting data
         processVotingData(allPaymentIntents);
       } catch (error) {
         console.error("Error fetching data:", error);
@@ -128,32 +184,27 @@ const VoteByCountry = () => {
     };
 
     const processVotingData = (paymentIntents) => {
-      // Filter payment intents to include only successful transactions
+      // Filter successful transactions only
       const successfulPaymentIntents = paymentIntents.filter(
         (item) => item.status === 'S'
       );
 
-      // Process data for Nepal
+      // Process Nepal payments
       const nepalData = successfulPaymentIntents.filter((item) =>
         nepalProcessors.includes(item.processor?.toUpperCase())
       );
 
-      // Calculate votes for each Nepal processor
       const nepalVotesData = nepalProcessors.map((processor) => {
         const processorData = nepalData.filter(
           (item) => item.processor?.toUpperCase() === processor
         );
         return processorData.reduce(
-          (sum, item) => sum + calculateVotes(item.amount, "NPR"), 
+          (sum, item) => sum + calculateVotes(item.amount, item.currency), 
           0
         );
       });
 
-      const totalNepalVotes = nepalVotesData.reduce((a, b) => a + b, 0);
-      setNepalVotes(nepalVotesData);
-      setTotalVotesNepal(totalNepalVotes);
-
-      // Process data for Global
+      // Process Global payments
       const indiaData = successfulPaymentIntents.filter((item) =>
         indiaProcessors.includes(item.processor?.toUpperCase())
       );
@@ -161,19 +212,21 @@ const VoteByCountry = () => {
         internationalProcessors.includes(item.processor?.toUpperCase())
       );
 
-      // Calculate votes for India (INR currency)
-      const indiaVotes = indiaData
-        .reduce((sum, item) => sum + calculateVotes(item.amount, "INR"), 0);
+      const indiaVotes = indiaData.reduce(
+        (sum, item) => sum + calculateVotes(item.amount, "INR"), 
+        0
+      );
 
-      // Calculate votes for International (other currencies)
-      const internationalVotes = internationalData
-        .reduce((sum, item) => {
-          const currency = item.processor?.toUpperCase() === "STRIPE" 
-            ? item.currency?.toUpperCase() || "USD" 
-            : "INR";
+      const internationalVotes = internationalData.reduce(
+        (sum, item) => {
+          const currency = item.currency || 'USD';
           return sum + calculateVotes(item.amount, currency);
-        }, 0);
+        }, 0
+      );
 
+      // Update state
+      setNepalVotes(nepalVotesData);
+      setTotalVotesNepal(nepalVotesData.reduce((a, b) => a + b, 0));
       setGlobalVotes([indiaVotes, internationalVotes]);
       setTotalVotesGlobal(indiaVotes + internationalVotes);
     };
@@ -199,6 +252,13 @@ const VoteByCountry = () => {
     labels: nepalLabels,
     colors: ["green", "#200a69", "red", "orange", "skyblue", "blue"],
     legend: { position: "bottom" },
+    tooltip: {
+      y: {
+        formatter: function(value) {
+          return value.toLocaleString();
+        }
+      }
+    }
   };
 
   const pieOptionsGlobal = {
@@ -209,6 +269,13 @@ const VoteByCountry = () => {
     labels: ["Votes by Residents Within India", "International Votes"],
     colors: ["#5F259F", "#FF5722"],
     legend: { position: "bottom" },
+    tooltip: {
+      y: {
+        formatter: function(value) {
+          return value.toLocaleString();
+        }
+      }
+    }
   };
 
   // Check if there is no data
@@ -289,9 +356,10 @@ const VoteByCountry = () => {
           margin-top: 30px;
         }
 
-        .header h2 {
+        .header h3 {
           margin: 0;
           font-size: 24px;
+          color: #333;
         }
 
         .export-btn {
@@ -305,10 +373,11 @@ const VoteByCountry = () => {
           align-items: center;
           gap: 8px;
           font-size: 16px;
+          transition: background-color 0.3s;
         }
 
         .export-btn:hover {
-          background-color: #028248;
+          background-color: #026e3d;
         }
 
         .charts {
@@ -316,6 +385,7 @@ const VoteByCountry = () => {
           justify-content: space-between;
           width: 100%;
           gap: 20px;
+          margin-top: 20px;
         }
 
         .report {
@@ -332,9 +402,16 @@ const VoteByCountry = () => {
 
         .chart-header {
           display: flex;
-          justify-content: space-between;
+          justify-content: center;
           align-items: center;
           width: 100%;
+          margin-bottom: 15px;
+        }
+
+        .chart-header h3 {
+          margin: 0;
+          font-size: 18px;
+          color: #444;
         }
 
         .total-votes {
@@ -344,6 +421,10 @@ const VoteByCountry = () => {
           padding: 10px;
           width: 100%;
           box-sizing: border-box;
+          font-weight: bold;
+          color: #333;
+          background-color: #f8f9fa;
+          border-radius: 4px;
         }
 
         .loading,
@@ -354,6 +435,10 @@ const VoteByCountry = () => {
           font-size: 18px;
           margin-top: 20px;
           width: 100%;
+          color: #666;
+          padding: 20px;
+          background-color: #f8f9fa;
+          border-radius: 8px;
         }
 
         /* Mobile responsiveness */
@@ -364,12 +449,13 @@ const VoteByCountry = () => {
             gap: 10px;
           }
 
-          .header h2 {
+          .header h3 {
             font-size: 20px;
           }
 
           .export-btn {
-            display: none;
+            width: 100%;
+            justify-content: center;
           }
 
           .charts {
@@ -378,30 +464,22 @@ const VoteByCountry = () => {
           }
 
           .report {
-            width: 85%;
+            width: 100%;
             margin-bottom: 20px;
           }
 
           .total-votes {
             font-size: 16px;
           }
-
-          .report .apexcharts-canvas {
-            height: 250px !important;
-          }
         }
 
         @media (max-width: 480px) {
-          .header h2 {
+          .header h3 {
             font-size: 18px;
           }
 
           .total-votes {
             font-size: 14px;
-          }
-
-          .report .apexcharts-canvas {
-            height: 200px !important;
           }
         }
       `}</style>
