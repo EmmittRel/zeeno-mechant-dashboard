@@ -8,6 +8,11 @@
     height: 100%;
     box-sizing: border-box;
   }
+  .rankImage {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+}
   
   .topH3 {
     font-size: 1.1rem;
@@ -51,7 +56,7 @@
   }
   
   .rankBadge {
-    background: #FFD700;
+    /* background: #FFD700; */
     color: #000;
     width: 24px;
     height: 24px;
@@ -65,9 +70,9 @@
     flex-shrink: 0;
   }
   
-  .rank1 .rankBadge { background: #FFD700; }
+  /* .rank1 .rankBadge { background: #FFD700; }
   .rank2 .rankBadge { background: #C0C0C0; }
-  .rank3 .rankBadge { background: #CD7F32; }
+  .rank3 .rankBadge { background: #CD7F32; } */
   
   .candidateImage {
     width: 40px;

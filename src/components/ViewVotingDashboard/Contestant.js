@@ -3,6 +3,15 @@ import { apiService, getIntentIdFromNQR, DEFAULT_AVATAR } from './apiService';
 import { calculateVotes } from '../AmountCalculator';
 import styles from '../../assets/Contestant.module.css';
 
+// Ranking badge images
+const RANKING_BADGES = {
+  1: 'https://i.ibb.co/KckrTSDz/IMG-3894.png',
+  2: 'https://i.ibb.co/8LNjCJMd/IMG-3895.png',
+  3: 'https://i.ibb.co/0R0LqWzg/IMG-3896.png',
+  4: 'https://i.ibb.co/6J0qH987/IMG-3897.png',
+  5: 'https://i.ibb.co/fTCCwKg/IMG-3898.png'
+};
+
 const Contestant = ({ event_id, token }) => {
   const [state, setState] = useState({
     candidates: [],
@@ -56,7 +65,6 @@ const Contestant = ({ event_id, token }) => {
       return { 
         ...contestant, 
         votes: totalVotes,
-        // Pre-calculate formatted votes for better performance
         formattedVotes: totalVotes.toLocaleString()
       };
     });
@@ -98,7 +106,6 @@ const Contestant = ({ event_id, token }) => {
     };
   }, [fetchData]);
 
-  // Skeleton loader for better UX
   if (state.isLoading) {
     return (
       <div className={styles.candidateCard}>
@@ -152,41 +159,50 @@ const Contestant = ({ event_id, token }) => {
     <div className={styles.candidateCard}>
       <h3 className={styles.topH3}>Top Performing Candidates</h3>
       <ul className={styles.candidateList}>
-        {state.candidates.map((candidate, index) => (
-          <li 
-            key={candidate.id} 
-            className={`${styles.candidateItem} ${styles[`rank${index + 1}`]}`}
-            aria-label={`Rank ${index + 1}: ${candidate.name} with ${candidate.votes} votes`}
-          >
-            <div className={styles.candidateInfo}>
-              <div className={styles.rankBadge} aria-hidden="true">
-                {index + 1}
+        {state.candidates.map((candidate, index) => {
+          const rank = index + 1;
+          return (
+            <li 
+              key={candidate.id} 
+              className={`${styles.candidateItem} ${styles[`rank${rank}`]}`}
+              aria-label={`Rank ${rank}: ${candidate.name} with ${candidate.votes} votes`}
+            >
+              <div className={styles.candidateInfo}>
+                <div className={styles.rankBadge} aria-hidden="true">
+                  <img 
+                    src={RANKING_BADGES[rank]} 
+                    alt={`Rank ${rank}`} 
+                    className={styles.rankImage}
+                    width="24"
+                    height="24"
+                  />
+                </div>
+                <img
+                  src={candidate.avatar || DEFAULT_AVATAR}
+                  alt={`${candidate.name}'s profile`}
+                  className={styles.candidateImage}
+                  loading="lazy"
+                  width="40"
+                  height="40"
+                  onError={(e) => {
+                    e.target.src = DEFAULT_AVATAR;
+                  }}
+                />
+                <div className={styles.nameContainer}>
+                  <span className={styles.candidateName} title={candidate.name}>
+                    {candidate.name}
+                  </span>
+                  <span className={styles.mobileVotes}>
+                    {candidate.formattedVotes} Votes
+                  </span>
+                </div>
               </div>
-              <img
-                src={candidate.avatar || DEFAULT_AVATAR}
-                alt={`${candidate.name}'s profile`}
-                className={styles.candidateImage}
-                loading="lazy"
-                width="40"
-                height="40"
-                onError={(e) => {
-                  e.target.src = DEFAULT_AVATAR;
-                }}
-              />
-              <div className={styles.nameContainer}>
-                <span className={styles.candidateName} title={candidate.name}>
-                  {candidate.name}
-                </span>
-                <span className={styles.mobileVotes}>
-                  {candidate.formattedVotes} Votes
-                </span>
-              </div>
-            </div>
-            <span className={styles.desktopVotes}>
-              {candidate.formattedVotes} Votes
-            </span>
-          </li>
-        ))}
+              <span className={styles.desktopVotes}>
+                {candidate.formattedVotes} Votes
+              </span>
+            </li>
+          );
+        })}
       </ul>
     </div>
   );
