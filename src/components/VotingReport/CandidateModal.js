@@ -321,7 +321,7 @@ const CandidateModel = ({
           <form onSubmit={handleSubmit} className="edit-form">
             <div className="form-row">
               <div className="form-group">
-                <label>Contestant No. (C.No.)</label>
+                <label>Contestant No.</label>
                 <input
                   type="text"
                   name="misc_kv"
