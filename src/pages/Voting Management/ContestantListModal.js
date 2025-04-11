@@ -700,7 +700,7 @@ const styles = {
   imageUploadContainer: {
     display: 'flex',
     flexDirection: 'column',
-    alignItems: 'center',
+    alignItems: 'left',
     gap: '10px',
   },
   imagePreview: {

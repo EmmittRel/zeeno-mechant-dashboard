@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import "../../assets/table.css";
 import { useToken } from "../../context/TokenContext";
 import { useParams } from "react-router-dom";
-import { FaEye, FaEdit, FaTrash, FaDownload, FaSort, FaSortAmountDown } from "react-icons/fa";
+import { FaEye, FaEdit, FaTrash, FaDownload, FaSort, FaSortAmountDown, FaSortUp, FaSortDown } from "react-icons/fa";
 import * as XLSX from "xlsx";
 import CandidateModel from "./CandidateModal";
 import { calculateVotes } from '../AmountCalculator';
@@ -130,8 +130,9 @@ const CandidateTable = () => {
   const [isEditMode, setIsEditMode] = useState(false);
   const [paymentInfo, setPaymentInfo] = useState(null);
   const [sortConfig, setSortConfig] = useState({
-    key: null,
-    direction: "asc",
+    key: "misc_kv",  // Default sort by C.No.
+    direction: "asc", // Default ascending order
+    numeric: true     // Treat as numeric for proper sorting
   });
   const itemsPerPage = 10;
 
@@ -213,7 +214,9 @@ const CandidateTable = () => {
       if (!event) throw new Error("Event not found");
       setPaymentInfo(event.payment_info);
 
-      setData(processCandidates(contestants, payments));
+      // Process candidates and apply initial sorting
+      const processed = processCandidates(contestants, payments);
+      setData(processed);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -225,15 +228,26 @@ const CandidateTable = () => {
     fetchData();
   }, [fetchData]);
 
-  // Sorting logic
+  // Enhanced sorting logic
   const sortedData = React.useMemo(() => {
     let sortableData = [...data];
     if (sortConfig.key) {
       sortableData.sort((a, b) => {
-        if (a[sortConfig.key] < b[sortConfig.key]) {
+        // Handle numeric sorting for specific keys
+        if (sortConfig.numeric) {
+          const numA = parseFloat(a[sortConfig.key]) || 0;
+          const numB = parseFloat(b[sortConfig.key]) || 0;
+          return sortConfig.direction === "asc" ? numA - numB : numB - numA;
+        }
+        
+        // Default string comparison
+        const valueA = String(a[sortConfig.key] || "").toLowerCase();
+        const valueB = String(b[sortConfig.key] || "").toLowerCase();
+        
+        if (valueA < valueB) {
           return sortConfig.direction === "asc" ? -1 : 1;
         }
-        if (a[sortConfig.key] > b[sortConfig.key]) {
+        if (valueA > valueB) {
           return sortConfig.direction === "asc" ? 1 : -1;
         }
         return 0;
@@ -248,7 +262,14 @@ const CandidateTable = () => {
     if (sortConfig.key === key && sortConfig.direction === "asc") {
       direction = "desc";
     }
-    setSortConfig({ key, direction });
+    
+    // Determine if this should be numeric sorting
+    const numericKeys = ["misc_kv", "votes"];
+    setSortConfig({ 
+      key, 
+      direction,
+      numeric: numericKeys.includes(key)
+    });
   };
 
   const handleFilterChange = (e) => {
@@ -453,7 +474,7 @@ const CandidateTable = () => {
                 whiteSpace: "nowrap",
               }}
             >
-              <FaSort style={{ fontSize: "14px" }} />
+              {sortConfig.direction === "asc" ? <FaSortUp /> : <FaSortDown />}
               {sortConfig.direction === "asc" ? "Ascending" : "Descending"}
             </button>
           </div>
@@ -490,10 +511,34 @@ const CandidateTable = () => {
             <tr>
               <th>S.No.</th>
               <th>Avatar</th>
-              <th>Name</th>
-              <th>C.No.</th>
+              <th>
+                <button 
+                  onClick={() => requestSort("name")}
+                  style={{ all: 'unset', cursor: 'pointer' }}
+                >
+                  Name 
+                  {sortConfig.key === "name" && (sortConfig.direction === "asc" ? <FaSortUp /> : <FaSortDown />)}
+                </button>
+              </th>
+              <th>
+                <button 
+                  onClick={() => requestSort("misc_kv")}
+                  style={{ all: 'unset', cursor: 'pointer'}}
+                >
+                  C.No.
+                  {sortConfig.key === "misc_kv" && (sortConfig.direction === "asc" ? <FaSortUp /> : <FaSortDown />)}
+                </button>
+              </th>
               <th>Status</th>
-              <th>Votes</th>
+              <th>
+                <button 
+                  onClick={() => requestSort("votes")}
+                  style={{ all: 'unset', cursor: 'pointer'}}
+                >
+                  Votes
+                  {sortConfig.key === "votes" && (sortConfig.direction === "asc" ? <FaSortUp /> : <FaSortDown />)}
+                </button>
+              </th>
               <th>Action</th>
             </tr>
           </thead>

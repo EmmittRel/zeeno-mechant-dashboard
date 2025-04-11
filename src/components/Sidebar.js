@@ -6,7 +6,6 @@ import {
   FaRegFileAlt,
   FaCogs,
   FaVoteYea,
-  FaTicketAlt,
   FaCalendarPlus,
   FaSignOutAlt, 
 } from "react-icons/fa";

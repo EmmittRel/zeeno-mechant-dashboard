@@ -5,66 +5,91 @@ import { useToken } from '../../context/TokenContext';
 import Modal from '../../components/modal';
 import { MdDelete, MdEdit, MdVisibility } from 'react-icons/md';
 import AddCandidateModal from '../../components/ViewRegistration/AddCandidate';
-import useS3Upload from '../../hooks/useS3Upload'; // Import the hook
+import useS3Upload from '../../hooks/useS3Upload';
+import ContestantListModal from './ContestantListModal';
 
 const ViewReport = () => {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-   const [userEvents, setUserEvents] = useState([]); 
-    const [userId, setUserId] = useState(null);
+  const [userEvents, setUserEvents] = useState([]); 
+  const [userId, setUserId] = useState(null);
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [showAddCandidateModal, setShowAddCandidateModal] = useState(false);
+  const [showContestantModal, setShowContestantModal] = useState(false);
+  const [selectedEventId, setSelectedEventId] = useState(null);
   const [message, setMessage] = useState(null);
   const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
   const [eventToDelete, setEventToDelete] = useState(null);
-  const [selectedFile, setSelectedFile] = useState(null); // State for the selected file
-  const [uploadProgress, setUploadProgress] = useState(0); // State for upload progress
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const { token } = useToken();
 
-  // Call the hook at the top level
   const { uploadFile } = useS3Upload();
 
-   useEffect(() => {
-      const fetchUserAndEvents = async () => {
-        try {
-          // First, fetch the user data to get the user ID
-          const userResponse = await fetch('https://auth.zeenopay.com/users/me/', {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          });
-          
-          if (!userResponse.ok) {
-            throw new Error('Failed to fetch user data');
-          }
-          
-          const userData = await userResponse.json();
-          setUserId(userData.id);
-  
-          // Then fetch all events
-          const eventsResponse = await fetch('https://auth.zeenopay.com/events/');
-          if (!eventsResponse.ok) {
-            throw new Error('Failed to fetch events');
-          }
-          
-          const eventsData = await eventsResponse.json();
-          setEvents(eventsData);
-          
-          // Filter events where owner matches user ID
-          const filteredEvents = eventsData.filter(event => event.owner === userData.id);
-          setUserEvents(filteredEvents);
-          
-          setLoading(false);
-        } catch (err) {
-          setError(err.message);
-          setLoading(false);
+  useEffect(() => {
+    const fetchUserAndEvents = async () => {
+      try {
+        const userResponse = await fetch('https://auth.zeenopay.com/users/me/', {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        
+        if (!userResponse.ok) {
+          throw new Error('Failed to fetch user data');
         }
-      };
-  
-      fetchUserAndEvents();
-    }, [token]);
+        
+        const userData = await userResponse.json();
+        setUserId(userData.id);
+
+        const eventsResponse = await fetch('https://auth.zeenopay.com/events/');
+        if (!eventsResponse.ok) {
+          throw new Error('Failed to fetch events');
+        }
+        
+        const eventsData = await eventsResponse.json();
+        setEvents(eventsData);
+        
+        const filteredEvents = eventsData.filter(event => event.owner === userData.id);
+        setUserEvents(filteredEvents);
+        
+        setLoading(false);
+      } catch (err) {
+        setError(err.message);
+        setLoading(false);
+      }
+    };
+
+    fetchUserAndEvents();
+  }, [token]);
+
+  const formatDateForInput = (dateString) => {
+    if (!dateString) return '';
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) return '';
+      
+      const pad = (num) => num.toString().padStart(2, '0');
+      
+      const year = date.getFullYear();
+      const month = pad(date.getMonth() + 1);
+      const day = pad(date.getDate());
+      const hours = pad(date.getHours());
+      const minutes = pad(date.getMinutes());
+      
+      return `${year}-${month}-${day}T${hours}:${minutes}`;
+    } catch (e) {
+      console.error('Error formatting date:', e);
+      return '';
+    }
+  };
+
+  const handleDateChange = (e) => {
+    const dateValue = e.target.value;
+    setSelectedEvent({ ...selectedEvent, finaldate: dateValue });
+  };
 
   const deleteEvent = async () => {
     try {
@@ -81,6 +106,7 @@ const ViewReport = () => {
       }
 
       setEvents(events.filter((event) => event.id !== eventToDelete));
+      setUserEvents(userEvents.filter((event) => event.id !== eventToDelete));
       setMessage({ type: 'success', text: 'Event deleted successfully' });
       setShowDeleteConfirmation(false);
       setShowModal(false);
@@ -93,50 +119,59 @@ const ViewReport = () => {
   const handleEditClick = (event) => {
     setSelectedEvent(event);
     setShowModal(true);
-    setSelectedFile(null); // Reset the selected file when opening the modal
+    setSelectedFile(null);
   };
 
   const handleCloseModal = () => {
     setShowModal(false);
     setSelectedEvent(null);
-    setSelectedFile(null); // Reset the selected file when closing the modal
-    setUploadProgress(0); // Reset the upload progress
+    setSelectedFile(null);
+    setUploadProgress(0);
   };
 
   const handleImageUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
-    setSelectedFile(file); // Set the selected file
+    setSelectedFile(file);
   };
 
   const handleUpdateEvent = async (updatedEvent) => {
     try {
+      if (!updatedEvent.finaldate) {
+        setMessage({ type: 'error', text: 'Please select a valid date and time' });
+        return;
+      }
+
+      const selectedDate = new Date(updatedEvent.finaldate);
+      if (selectedDate < new Date()) {
+        setMessage({ type: 'error', text: 'Please select a future date and time' });
+        return;
+      }
+
       let imgUrl = updatedEvent.img;
 
-      // If a new file is selected, upload it to S3
       if (selectedFile) {
         imgUrl = await new Promise((resolve, reject) => {
           uploadFile(
             selectedFile,
-            (progress) => setUploadProgress(progress), // Track upload progress
+            (progress) => setUploadProgress(progress),
             () => {
               const url = `https://${process.env.REACT_APP_AWS_S3_BUCKET}.s3.${process.env.REACT_APP_AWS_REGION}.amazonaws.com/${selectedFile.name}`;
-              resolve(url); // Resolve with the S3 URL
+              resolve(url);
             },
-            (err) => reject(err) // Handle upload errors
+            (err) => reject(err)
           );
         });
       }
 
-      // Update the event with the new image URL
       const response = await fetch(`https://auth.zeenopay.com/events/${updatedEvent.id}/`, {
         method: 'PUT',
         headers: {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ ...updatedEvent, img: imgUrl }), // Include the new image URL
+        body: JSON.stringify({ ...updatedEvent, img: imgUrl }),
       });
 
       if (!response.ok) {
@@ -145,6 +180,7 @@ const ViewReport = () => {
 
       const data = await response.json();
       setEvents(events.map((event) => (event.id === updatedEvent.id ? data : event)));
+      setUserEvents(userEvents.map((event) => (event.id === updatedEvent.id ? data : event)));
       setMessage({ type: 'success', text: '🎉 Event updated successfully' });
       handleCloseModal();
     } catch (err) {
@@ -153,12 +189,12 @@ const ViewReport = () => {
   };
 
   const handleAddCandidateClick = () => {
-    setShowModal(false); // Close the edit event modal
-    setShowAddCandidateModal(true); // Open the add candidate modal
+    setShowModal(false);
+    setShowAddCandidateModal(true);
   };
 
   const handleCloseAddCandidateModal = () => {
-    setShowAddCandidateModal(false); // Close the add candidate modal
+    setShowAddCandidateModal(false);
   };
 
   if (loading) {
@@ -186,40 +222,40 @@ const ViewReport = () => {
         </div>
       )}
       <div style={styles.cardContainer}>
-              {userEvents.length > 0 ? (
-                userEvents.map((event) => (
-                  <div
-                    key={event.id}
-                    style={styles.cardLink}
-                    onMouseEnter={(e) => (e.currentTarget.style.transform = 'scale(1.05)')}
-                    onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
-                  >
-                    <div style={styles.card}>
-                      <div style={styles.imageWrapper}>
-                        {event.img ? (
-                          <img src={event.img} alt={event.title || 'Event Image'} style={styles.image} />
-                        ) : (
-                          <div style={styles.noImage}>No Image Available</div>
-                        )}
-                      </div>
-                      <div style={styles.cardContent}>
-                        <h2 style={styles.cardTitle}>{`${event.title || 'No Title'}`}</h2>
-                        <div style={styles.buttonContainer}>
-                          <Link to={`/eventreport/${event.id}`} style={styles.viewButton}>
-                            <MdVisibility style={styles.icon} /> View Report
-                          </Link>
-                          <button onClick={() => handleEditClick(event)} style={styles.editButton}>
-                            <MdEdit style={styles.icon} /> Edit
-                          </button>
-                        </div>
-                      </div>
-                    </div>
+        {userEvents.length > 0 ? (
+          userEvents.map((event) => (
+            <div
+              key={event.id}
+              style={styles.cardLink}
+              onMouseEnter={(e) => (e.currentTarget.style.transform = 'scale(1.05)')}
+              onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
+            >
+              <div style={styles.card}>
+                <div style={styles.imageWrapper}>
+                  {event.img ? (
+                    <img src={event.img} alt={event.title || 'Event Image'} style={styles.image} />
+                  ) : (
+                    <div style={styles.noImage}>No Image Available</div>
+                  )}
+                </div>
+                <div style={styles.cardContent}>
+                  <h2 style={styles.cardTitle}>{`${event.title || 'No Title'}`}</h2>
+                  <div style={styles.buttonContainer}>
+                    <Link to={`/eventreport/${event.id}`} style={styles.viewButton}>
+                      <MdVisibility style={styles.icon} /> View Report
+                    </Link>
+                    <button onClick={() => handleEditClick(event)} style={styles.editButton}>
+                      <MdEdit style={styles.icon} /> Edit
+                    </button>
                   </div>
-                ))
-              ) : (
-                <p>No events found. Create your first event!</p>
-              )}
+                </div>
+              </div>
             </div>
+          ))
+        ) : (
+          <p>No events found. Create your first event!</p>
+        )}
+      </div>
 
       {/* Edit Event Modal */}
       {showModal && selectedEvent && (
@@ -239,6 +275,7 @@ const ViewReport = () => {
                   value={selectedEvent.title}
                   onChange={(e) => setSelectedEvent({ ...selectedEvent, title: e.target.value })}
                   style={styles.input}
+                  required
                 />
               </div>
               <div style={styles.formGroup}>
@@ -247,6 +284,7 @@ const ViewReport = () => {
                   value={selectedEvent.desc}
                   onChange={(e) => setSelectedEvent({ ...selectedEvent, desc: e.target.value })}
                   style={styles.textarea}
+                  required
                 />
               </div>
               <div style={styles.formGroup}>
@@ -256,6 +294,7 @@ const ViewReport = () => {
                   value={selectedEvent.org}
                   onChange={(e) => setSelectedEvent({ ...selectedEvent, org: e.target.value })}
                   style={styles.input}
+                  required
                 />
               </div>
               <div style={styles.formGroup}>
@@ -270,7 +309,6 @@ const ViewReport = () => {
                   ) : (
                     <p>No image available</p>
                   )}
-                  {/* Edit Button on Image */}
                   <button
                     type="button"
                     onClick={() => document.getElementById('imageUpload').click()}
@@ -278,7 +316,6 @@ const ViewReport = () => {
                   >
                     <MdEdit style={styles.editIcon} />
                   </button>
-                  {/* Hidden File Input */}
                   <input
                     id="imageUpload"
                     type="file"
@@ -293,9 +330,11 @@ const ViewReport = () => {
                 <label>Final Date</label>
                 <input
                   type="datetime-local"
-                  value={selectedEvent.finaldate}
-                  onChange={(e) => setSelectedEvent({ ...selectedEvent, finaldate: e.target.value })}
+                  value={formatDateForInput(selectedEvent.finaldate)}
+                  onChange={handleDateChange}
                   style={styles.input}
+                  min={new Date().toISOString().slice(0, 16)}
+                  required
                 />
               </div>
               <div style={styles.buttonGroup}>
@@ -319,6 +358,16 @@ const ViewReport = () => {
                 >
                   Add Contestant
                 </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedEventId(selectedEvent.id);
+                    setShowContestantModal(true);
+                  }}
+                  style={styles.seeContestantsButton}
+                >
+                  See Contestants
+                </button>
               </div>
             </form>
           </div>
@@ -328,12 +377,19 @@ const ViewReport = () => {
       {/* Add Candidate Modal */}
       {showAddCandidateModal && (
         <AddCandidateModal
-          events={events}
+          events={userEvents}
           onClose={handleCloseAddCandidateModal}
           onSubmit={(candidate) => {
-            // Handle the submission of the candidate
             handleCloseAddCandidateModal();
           }}
+        />
+      )}
+
+      {/* Contestant List Modal */}
+      {showContestantModal && (
+        <ContestantListModal 
+          eventId={selectedEventId} 
+          onClose={() => setShowContestantModal(false)} 
         />
       )}
 
@@ -472,6 +528,17 @@ const styles = {
   addCandidateButton: {
     padding: '12px 20px',
     backgroundColor: '#3498db',
+    color: '#fff',
+    border: 'none',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontWeight: '600',
+    flex: 1,
+    minWidth: '120px',
+  },
+  seeContestantsButton: {
+    padding: '12px 20px',
+    backgroundColor: '#9b59b6',
     color: '#fff',
     border: 'none',
     borderRadius: '8px',

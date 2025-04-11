@@ -168,6 +168,21 @@ const ViewRegistration = () => {
     setShowAddCandidateModal(false); 
   };
 
+  // Format date for display in the input field
+  const formatDateForInput = (dateString) => {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    const pad = (num) => num.toString().padStart(2, '0');
+    
+    const year = date.getFullYear();
+    const month = pad(date.getMonth() + 1);
+    const day = pad(date.getDate());
+    const hours = pad(date.getHours());
+    const minutes = pad(date.getMinutes());
+    
+    return `${year}-${month}-${day}T${hours}:${minutes}`;
+  };
+
   if (loading) {
     return (
       <DashboardLayout>
@@ -298,9 +313,10 @@ const ViewRegistration = () => {
                 <label>Final Date</label>
                 <input
                   type="datetime-local"
-                  value={selectedEvent.finaldate}
+                  value={formatDateForInput(selectedEvent.finaldate)}
                   onChange={(e) => setSelectedEvent({ ...selectedEvent, finaldate: e.target.value })}
                   style={styles.input}
+                  min={new Date().toISOString().slice(0, 16)} // Prevent selecting past dates
                 />
               </div>
               <div style={styles.buttonGroup}>

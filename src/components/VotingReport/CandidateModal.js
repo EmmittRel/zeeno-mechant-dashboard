@@ -358,7 +358,7 @@ const CandidateModel = ({
             </div>
 
             <div className="form-group">
-              <label>Shareable Link/Reels</label>
+              <label>Reel Link</label>
               <input
                 type="url"
                 name="shareable_link"
@@ -426,7 +426,7 @@ const CandidateModel = ({
                   </span>
                 </p>
                 <p><strong>Total Votes:</strong> {totalVotes} Votes</p>
-                <p><strong>Shareable Link:</strong> 
+                <p><strong>Reel Link:</strong> 
                   {candidate.shareable_link ? (
                     <a href={candidate.shareable_link} target="_blank" rel="noopener noreferrer">
                       View Reels
