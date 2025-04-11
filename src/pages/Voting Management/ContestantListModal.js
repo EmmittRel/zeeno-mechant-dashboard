@@ -85,7 +85,6 @@ const ContestantListModal = ({ eventId, onClose }) => {
     const file = e.target.files[0];
     if (file) {
       setSelectedImage(file);
-      // Create a preview URL for the image
       const previewUrl = URL.createObjectURL(file);
       setEditFormData(prev => ({ ...prev, avatar: previewUrl }));
     }
@@ -96,7 +95,6 @@ const ContestantListModal = ({ eventId, onClose }) => {
     try {
       let avatarUrl = editFormData.avatar;
 
-      // Upload new image if selected
       if (selectedImage) {
         avatarUrl = await new Promise((resolve, reject) => {
           uploadFile(
@@ -216,11 +214,18 @@ const ContestantListModal = ({ eventId, onClose }) => {
           <p style={styles.noContestants}>No contestants found for this event.</p>
         )}
 
-        {/* Delete Confirmation Modal */}
         {deleteConfirmation && (
           <div style={styles.confirmationOverlay}>
             <div style={styles.confirmationModal}>
-              <h3 style={styles.confirmationTitle}>Confirm Delete</h3>
+              <div style={styles.modalHeader}>
+                <h3 style={styles.confirmationTitle}>Confirm Delete</h3>
+                <button 
+                  onClick={() => setDeleteConfirmation(null)}
+                  style={styles.closeButton}
+                >
+                  <MdClose size={20} />
+                </button>
+              </div>
               <p style={styles.confirmationText}>Are you sure you want to delete this contestant?</p>
               <div style={styles.confirmationButtons}>
                 <button
@@ -240,7 +245,6 @@ const ContestantListModal = ({ eventId, onClose }) => {
           </div>
         )}
 
-        {/* Edit Contestant Modal */}
         {editingContestant && (
           <div style={styles.confirmationOverlay}>
             <div style={styles.editModal}>
@@ -369,7 +373,7 @@ const ContestantListModal = ({ eventId, onClose }) => {
 const styles = {
   modalContent: {
     position: 'relative',
-    maxHeight: '80vh',
+    maxHeight: 'calc(100vh - 100px)',
     overflowY: 'auto',
     padding: '20px',
     width: '100%',
@@ -378,11 +382,12 @@ const styles = {
     borderRadius: '8px',
     boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15)',
     '@media (max-width: 768px)': {
-      maxHeight: '90vh',
+      maxHeight: 'calc(100vh - 60px)',
       padding: '15px',
     },
     '@media (max-width: 480px)': {
-      padding: '10px',
+      padding: '12px',
+      maxHeight: 'calc(100vh - 40px)',
     },
   },
   modalHeader: {
@@ -392,6 +397,10 @@ const styles = {
     marginBottom: '20px',
     paddingBottom: '15px',
     borderBottom: '1px solid #eee',
+    position: 'sticky',
+    top: 0,
+    backgroundColor: '#fff',
+    zIndex: 1,
     '@media (max-width: 480px)': {
       marginBottom: '15px',
       paddingBottom: '10px',
@@ -571,36 +580,49 @@ const styles = {
     bottom: '0',
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     display: 'flex',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'center',
     zIndex: '1000',
     padding: '15px',
+    overflowY: 'auto',
+    '@media (max-width: 480px)': {
+      padding: '10px',
+      alignItems: 'flex-start',
+    },
   },
   confirmationModal: {
     backgroundColor: '#fff',
-    padding: '25px',
+    padding: '20px',
     borderRadius: '8px',
     maxWidth: '400px',
     width: '100%',
     boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15)',
+    margin: '20px 0',
     '@media (max-width: 480px)': {
-      padding: '20px',
+      padding: '15px',
+      maxWidth: 'calc(100% - 20px)',
+      margin: '10px 0',
     },
   },
   editModal: {
     backgroundColor: '#fff',
-    padding: '25px',
+    padding: '20px',
     borderRadius: '8px',
     maxWidth: '500px',
     width: '100%',
     boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15)',
-    maxHeight: '90vh',
+    maxHeight: 'calc(100vh - 100px)',
     overflowY: 'auto',
+    margin: '20px 0',
     '@media (max-width: 768px)': {
-      padding: '20px',
+      padding: '15px',
+      maxHeight: 'calc(100vh - 60px)',
     },
     '@media (max-width: 480px)': {
-      padding: '15px',
+      padding: '12px',
+      maxWidth: 'calc(100% - 20px)',
+      maxHeight: 'calc(100vh - 40px)',
+      margin: '10px 0',
     },
   },
   confirmationTitle: {
@@ -745,9 +767,11 @@ const styles = {
     justifyContent: 'flex-end',
     gap: '10px',
     marginTop: '20px',
+    paddingBottom: '10px',
     '@media (max-width: 480px)': {
       marginTop: '15px',
       gap: '8px',
+      paddingBottom: '5px',
     },
   },
   cancelButton: {
