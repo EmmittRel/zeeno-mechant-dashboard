@@ -257,111 +257,113 @@ const ContestantListModal = ({ eventId, onClose }) => {
                   <MdClose size={20} />
                 </button>
               </div>
-              <form onSubmit={handleEditSubmit}>
-                <div style={styles.formGroup}>
-                  <label style={styles.formLabel}>Name*</label>
-                  <input
-                    type="text"
-                    name="name"
-                    value={editFormData.name}
-                    onChange={handleInputChange}
-                    style={styles.formInput}
-                    required
-                  />
-                </div>
-
-                <div style={styles.formGroup}>
-                  <label style={styles.formLabel}>Avatar</label>
-                  <div style={styles.imageUploadContainer}>
-                    {editFormData.avatar ? (
-                      <img 
-                        src={editFormData.avatar} 
-                        alt="Preview" 
-                        style={styles.imagePreview}
-                      />
-                    ) : (
-                      <div style={styles.noImage}>No Image</div>
-                    )}
-                    <label style={styles.uploadButton}>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={handleImageChange}
-                        style={{ display: 'none' }}
-                      />
-                      <MdCloudUpload style={styles.uploadIcon} />
-                      <span style={styles.uploadText}>{selectedImage ? 'Change Image' : 'Upload Image'}</span>
-                    </label>
-                    {uploadProgress > 0 && (
-                      <div style={styles.progressBar}>
-                        <div 
-                          style={{
-                            ...styles.progressFill,
-                            width: `${uploadProgress}%`
-                          }}
-                        ></div>
-                        <span style={styles.progressText}>{uploadProgress}%</span>
-                      </div>
-                    )}
+              <div style={styles.formContainer}>
+                <form onSubmit={handleEditSubmit}>
+                  <div style={styles.formGroup}>
+                    <label style={styles.formLabel}>Name*</label>
+                    <input
+                      type="text"
+                      name="name"
+                      value={editFormData.name}
+                      onChange={handleInputChange}
+                      style={styles.formInput}
+                      required
+                    />
                   </div>
-                </div>
 
-                <div style={styles.formGroup}>
-                  <label style={styles.formLabel}>Bio</label>
-                  <textarea
-                    name="bio"
-                    value={editFormData.bio}
-                    onChange={handleInputChange}
-                    style={{...styles.formInput, minHeight: '80px'}}
-                    placeholder="Enter contestant bio"
-                  />
-                </div>
+                  <div style={styles.formGroup}>
+                    <label style={styles.formLabel}>Avatar</label>
+                    <div style={styles.imageUploadContainer}>
+                      {editFormData.avatar ? (
+                        <img 
+                          src={editFormData.avatar} 
+                          alt="Preview" 
+                          style={styles.imagePreview}
+                        />
+                      ) : (
+                        <div style={styles.noImage}>No Image</div>
+                      )}
+                      <label style={styles.uploadButton}>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handleImageChange}
+                          style={{ display: 'none' }}
+                        />
+                        <MdCloudUpload style={styles.uploadIcon} />
+                        <span style={styles.uploadText}>{selectedImage ? 'Change Image' : 'Upload Image'}</span>
+                      </label>
+                      {uploadProgress > 0 && (
+                        <div style={styles.progressBar}>
+                          <div 
+                            style={{
+                              ...styles.progressFill,
+                              width: `${uploadProgress}%`
+                            }}
+                          ></div>
+                          <span style={styles.progressText}>{uploadProgress}%</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
 
-                <div style={styles.formGroup}>
-                  <label style={styles.formLabel}>Contestant Number</label>
-                  <input
-                    type="text"
-                    name="misc_kv"
-                    value={editFormData.misc_kv}
-                    onChange={handleInputChange}
-                    style={styles.formInput}
-                    placeholder="Enter Contestant Number"
-                  />
-                </div>
+                  <div style={styles.formGroup}>
+                    <label style={styles.formLabel}>Bio</label>
+                    <textarea
+                      name="bio"
+                      value={editFormData.bio}
+                      onChange={handleInputChange}
+                      style={{...styles.formInput, minHeight: '80px'}}
+                      placeholder="Enter contestant bio"
+                    />
+                  </div>
 
-                <div style={styles.formGroup}>
-                  <label style={styles.formLabel}>Edit Reels</label>
-                  <input
-                    type="text"
-                    name="shareable_link"
-                    value={editFormData.shareable_link}
-                    onChange={handleInputChange}
-                    style={styles.formInput}
-                    placeholder="Enter reels link"
-                  />
-                </div>
+                  <div style={styles.formGroup}>
+                    <label style={styles.formLabel}>Contestant Number</label>
+                    <input
+                      type="text"
+                      name="misc_kv"
+                      value={editFormData.misc_kv}
+                      onChange={handleInputChange}
+                      style={styles.formInput}
+                      placeholder="Enter Contestant Number"
+                    />
+                  </div>
 
-                <div style={styles.formButtons}>
-                  <button
-                    type="button"
-                    onClick={() => setEditingContestant(null)}
-                    style={styles.cancelButton}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    style={styles.updateButton}
-                    disabled={uploadProgress > 0 && uploadProgress < 100}
-                  >
-                    {uploadProgress > 0 && uploadProgress < 100 ? (
-                      `Uploading... ${uploadProgress}%`
-                    ) : (
-                      'Update Contestant'
-                    )}
-                  </button>
-                </div>
-              </form>
+                  <div style={styles.formGroup}>
+                    <label style={styles.formLabel}>Edit Reels</label>
+                    <input
+                      type="text"
+                      name="shareable_link"
+                      value={editFormData.shareable_link}
+                      onChange={handleInputChange}
+                      style={styles.formInput}
+                      placeholder="Enter reels link"
+                    />
+                  </div>
+
+                  <div style={styles.formButtons}>
+                    <button
+                      type="button"
+                      onClick={() => setEditingContestant(null)}
+                      style={styles.cancelButton}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      style={styles.updateButton}
+                      disabled={uploadProgress > 0 && uploadProgress < 100}
+                    >
+                      {uploadProgress > 0 && uploadProgress < 100 ? (
+                        `Uploading... ${uploadProgress}%`
+                      ) : (
+                        'Update Contestant'
+                      )}
+                    </button>
+                  </div>
+                </form>
+              </div>
             </div>
           </div>
         )}
@@ -611,18 +613,30 @@ const styles = {
     maxWidth: '500px',
     width: '100%',
     boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15)',
-    maxHeight: 'calc(100vh - 100px)',
-    overflowY: 'auto',
+    maxHeight: '85vh',
+    overflow: 'hidden',
+    display: 'flex',
+    flexDirection: 'column',
     margin: '20px 0',
     '@media (max-width: 768px)': {
       padding: '15px',
-      maxHeight: 'calc(100vh - 60px)',
+      maxHeight: '80vh',
     },
     '@media (max-width: 480px)': {
       padding: '12px',
       maxWidth: 'calc(100% - 20px)',
-      maxHeight: 'calc(100vh - 40px)',
+      maxHeight: '75vh',
       margin: '10px 0',
+    },
+  },
+  formContainer: {
+    flex: 1,
+    overflowY: 'auto',
+    padding: '5px 5px 15px 5px',
+    marginRight: '-10px',
+    paddingRight: '10px',
+    '@media (max-width: 480px)': {
+      paddingBottom: '10px',
     },
   },
   confirmationTitle: {
