@@ -321,19 +321,19 @@ const ContestantListModal = ({ eventId, onClose }) => {
                     value={editFormData.misc_kv}
                     onChange={handleInputChange}
                     style={styles.formInput}
-                    placeholder="Enter custom identifier"
+                    placeholder="Enter Contestant Number"
                   />
                 </div>
 
                 <div style={styles.formGroup}>
-                  <label style={styles.formLabel}>Shareable Link</label>
+                  <label style={styles.formLabel}>Edit Reels</label>
                   <input
                     type="text"
                     name="shareable_link"
                     value={editFormData.shareable_link}
                     onChange={handleInputChange}
                     style={styles.formInput}
-                    placeholder="Enter shareable link"
+                    placeholder="Enter reels link"
                   />
                 </div>
 
