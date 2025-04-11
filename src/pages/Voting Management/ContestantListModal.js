@@ -194,20 +194,19 @@ const ContestantListModal = ({ eventId, onClose }) => {
                 </div>
                 <div style={styles.contestantInfo}>
                   <h3 style={styles.contestantName}>{contestant.name}</h3>
-                 
                 </div>
                 <div style={styles.contestantActions}>
                   <button 
                     onClick={() => handleEditClick(contestant)}
                     style={styles.editButton}
                   >
-                    <MdEdit style={styles.buttonIcon} /> Edit
+                    <MdEdit style={styles.buttonIcon} /> <span style={styles.buttonText}>Edit</span>
                   </button>
                   <button
                     onClick={() => setDeleteConfirmation(contestant.id)}
                     style={styles.deleteButton}
                   >
-                    <MdDelete style={styles.buttonIcon} /> Delete
+                    <MdDelete style={styles.buttonIcon} /> <span style={styles.buttonText}>Delete</span>
                   </button>
                 </div>
               </div>
@@ -287,7 +286,7 @@ const ContestantListModal = ({ eventId, onClose }) => {
                         style={{ display: 'none' }}
                       />
                       <MdCloudUpload style={styles.uploadIcon} />
-                      {selectedImage ? 'Change Image' : 'Upload Image'}
+                      <span style={styles.uploadText}>{selectedImage ? 'Change Image' : 'Upload Image'}</span>
                     </label>
                     {uploadProgress > 0 && (
                       <div style={styles.progressBar}>
@@ -315,7 +314,7 @@ const ContestantListModal = ({ eventId, onClose }) => {
                 </div>
 
                 <div style={styles.formGroup}>
-                  <label style={styles.formLabel}>Custom ID (misc_kv)</label>
+                  <label style={styles.formLabel}>Contestant Number</label>
                   <input
                     type="text"
                     name="misc_kv"
@@ -378,6 +377,13 @@ const styles = {
     backgroundColor: '#fff',
     borderRadius: '8px',
     boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15)',
+    '@media (max-width: 768px)': {
+      maxHeight: '90vh',
+      padding: '15px',
+    },
+    '@media (max-width: 480px)': {
+      padding: '10px',
+    },
   },
   modalHeader: {
     display: 'flex',
@@ -386,12 +392,19 @@ const styles = {
     marginBottom: '20px',
     paddingBottom: '15px',
     borderBottom: '1px solid #eee',
+    '@media (max-width: 480px)': {
+      marginBottom: '15px',
+      paddingBottom: '10px',
+    },
   },
   modalTitle: {
     fontSize: '24px',
     fontWeight: '600',
     color: '#333',
     margin: '0',
+    '@media (max-width: 768px)': {
+      fontSize: '20px',
+    },
   },
   closeButton: {
     background: 'none',
@@ -415,6 +428,14 @@ const styles = {
     gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))',
     gap: '20px',
     marginTop: '15px',
+    '@media (max-width: 768px)': {
+      gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
+      gap: '15px',
+    },
+    '@media (max-width: 480px)': {
+      gridTemplateColumns: '1fr',
+      gap: '10px',
+    },
   },
   contestantCard: {
     backgroundColor: '#fff',
@@ -427,6 +448,10 @@ const styles = {
       transform: 'translateY(-5px)',
       boxShadow: '0 5px 15px rgba(0, 0, 0, 0.1)',
     },
+    '@media (max-width: 480px)': {
+      display: 'flex',
+      flexDirection: 'column',
+    },
   },
   contestantImageContainer: {
     width: '100%',
@@ -436,6 +461,9 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
+    '@media (max-width: 480px)': {
+      height: '150px',
+    },
   },
   contestantImage: {
     width: '100%',
@@ -448,31 +476,26 @@ const styles = {
   },
   contestantInfo: {
     padding: '15px',
+    '@media (max-width: 480px)': {
+      padding: '10px',
+    },
   },
   contestantName: {
     fontSize: '18px',
     fontWeight: '600',
     margin: '0 0 5px 0',
     color: '#333',
-  },
-  infoRow: {
-    display: 'flex',
-    margin: '3px 0',
-    fontSize: '14px',
-  },
-  infoLabel: {
-    fontWeight: '500',
-    color: '#555',
-    marginRight: '5px',
-    minWidth: '70px',
-  },
-  infoValue: {
-    color: '#333',
+    '@media (max-width: 480px)': {
+      fontSize: '16px',
+    },
   },
   contestantActions: {
     display: 'flex',
     padding: '0 15px 15px 15px',
     gap: '10px',
+    '@media (max-width: 480px)': {
+      padding: '0 10px 10px 10px',
+    },
   },
   editButton: {
     flex: '1',
@@ -490,6 +513,10 @@ const styles = {
     transition: 'background-color 0.2s ease',
     ':hover': {
       backgroundColor: '#e2b607',
+    },
+    '@media (max-width: 480px)': {
+      padding: '8px',
+      fontSize: '13px',
     },
   },
   deleteButton: {
@@ -509,15 +536,32 @@ const styles = {
     ':hover': {
       backgroundColor: '#d62c1a',
     },
+    '@media (max-width: 480px)': {
+      padding: '8px',
+      fontSize: '13px',
+    },
   },
   buttonIcon: {
     marginRight: '5px',
     fontSize: '16px',
+    '@media (max-width: 480px)': {
+      marginRight: '3px',
+      fontSize: '14px',
+    },
+  },
+  buttonText: {
+    '@media (max-width: 480px)': {
+      display: 'inline',
+    },
   },
   noContestants: {
     textAlign: 'center',
     color: '#666',
     padding: '20px',
+    '@media (max-width: 480px)': {
+      padding: '15px',
+      fontSize: '14px',
+    },
   },
   confirmationOverlay: {
     position: 'fixed',
@@ -530,6 +574,7 @@ const styles = {
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: '1000',
+    padding: '15px',
   },
   confirmationModal: {
     backgroundColor: '#fff',
@@ -538,6 +583,9 @@ const styles = {
     maxWidth: '400px',
     width: '100%',
     boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15)',
+    '@media (max-width: 480px)': {
+      padding: '20px',
+    },
   },
   editModal: {
     backgroundColor: '#fff',
@@ -548,25 +596,45 @@ const styles = {
     boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15)',
     maxHeight: '90vh',
     overflowY: 'auto',
+    '@media (max-width: 768px)': {
+      padding: '20px',
+    },
+    '@media (max-width: 480px)': {
+      padding: '15px',
+    },
   },
   confirmationTitle: {
     fontSize: '20px',
     fontWeight: '600',
     margin: '0 0 15px 0',
     color: '#333',
+    '@media (max-width: 480px)': {
+      fontSize: '18px',
+      marginBottom: '10px',
+    },
   },
   confirmationText: {
     fontSize: '16px',
     color: '#555',
     margin: '0 0 25px 0',
+    '@media (max-width: 480px)': {
+      fontSize: '14px',
+      marginBottom: '20px',
+    },
   },
   confirmationButtons: {
     display: 'flex',
     justifyContent: 'flex-end',
     gap: '10px',
+    '@media (max-width: 480px)': {
+      gap: '8px',
+    },
   },
   formGroup: {
     marginBottom: '15px',
+    '@media (max-width: 480px)': {
+      marginBottom: '12px',
+    },
   },
   formLabel: {
     display: 'block',
@@ -574,6 +642,9 @@ const styles = {
     fontSize: '14px',
     fontWeight: '500',
     color: '#555',
+    '@media (max-width: 480px)': {
+      fontSize: '13px',
+    },
   },
   formInput: {
     width: '100%',
@@ -584,6 +655,10 @@ const styles = {
     ':focus': {
       outline: 'none',
       borderColor: '#3498db',
+    },
+    '@media (max-width: 480px)': {
+      padding: '8px',
+      fontSize: '13px',
     },
   },
   imageUploadContainer: {
@@ -598,6 +673,10 @@ const styles = {
     objectFit: 'cover',
     borderRadius: '8px',
     border: '1px solid #eee',
+    '@media (max-width: 480px)': {
+      width: '120px',
+      height: '120px',
+    },
   },
   uploadButton: {
     display: 'flex',
@@ -615,10 +694,23 @@ const styles = {
     ':hover': {
       backgroundColor: '#2980b9',
     },
+    '@media (max-width: 480px)': {
+      padding: '6px 12px',
+      fontSize: '13px',
+    },
   },
   uploadIcon: {
     marginRight: '5px',
     fontSize: '18px',
+    '@media (max-width: 480px)': {
+      fontSize: '16px',
+      marginRight: '3px',
+    },
+  },
+  uploadText: {
+    '@media (max-width: 480px)': {
+      fontSize: '13px',
+    },
   },
   progressBar: {
     width: '100%',
@@ -627,6 +719,9 @@ const styles = {
     borderRadius: '4px',
     overflow: 'hidden',
     position: 'relative',
+    '@media (max-width: 480px)': {
+      height: '16px',
+    },
   },
   progressFill: {
     height: '100%',
@@ -641,12 +736,19 @@ const styles = {
     color: '#fff',
     fontSize: '12px',
     fontWeight: 'bold',
+    '@media (max-width: 480px)': {
+      fontSize: '10px',
+    },
   },
   formButtons: {
     display: 'flex',
     justifyContent: 'flex-end',
     gap: '10px',
     marginTop: '20px',
+    '@media (max-width: 480px)': {
+      marginTop: '15px',
+      gap: '8px',
+    },
   },
   cancelButton: {
     padding: '8px 16px',
@@ -661,6 +763,10 @@ const styles = {
     ':hover': {
       backgroundColor: '#e5e5e5',
     },
+    '@media (max-width: 480px)': {
+      padding: '6px 12px',
+      fontSize: '13px',
+    },
   },
   confirmDeleteButton: {
     padding: '8px 16px',
@@ -674,6 +780,10 @@ const styles = {
     transition: 'background-color 0.2s ease',
     ':hover': {
       backgroundColor: '#d62c1a',
+    },
+    '@media (max-width: 480px)': {
+      padding: '6px 12px',
+      fontSize: '13px',
     },
   },
   updateButton: {
@@ -692,6 +802,10 @@ const styles = {
     ':disabled': {
       backgroundColor: '#95a5a6',
       cursor: 'not-allowed',
+    },
+    '@media (max-width: 480px)': {
+      padding: '6px 12px',
+      fontSize: '13px',
     },
   },
 };
