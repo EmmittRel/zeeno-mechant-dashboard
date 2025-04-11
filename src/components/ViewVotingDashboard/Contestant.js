@@ -5,11 +5,11 @@ import styles from '../../assets/Contestant.module.css';
 
 // Ranking badge images
 const RANKING_BADGES = {
-  1: 'https://i.ibb.co/KckrTSDz/IMG-3894.png',
-  2: 'https://i.ibb.co/8LNjCJMd/IMG-3895.png',
-  3: 'https://i.ibb.co/0R0LqWzg/IMG-3896.png',
-  4: 'https://i.ibb.co/6J0qH987/IMG-3897.png',
-  5: 'https://i.ibb.co/fTCCwKg/IMG-3898.png'
+  1: 'https://i.ibb.co/Ld2vFtRZ/IMG-3934.png',
+  2: 'https://i.ibb.co/zHfvKJYm/IMG-3935.png',
+  3: 'https://i.ibb.co/V097DmZf/IMG-3936.png',
+  4: 'https://i.ibb.co/cc0K7wm3/IMG-3937.png',
+  5: 'https://i.ibb.co/NdmpBMWc/IMG-3938.png'
 };
 
 const Contestant = ({ event_id, token }) => {
