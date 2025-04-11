@@ -124,7 +124,7 @@ const VotingData = () => {
           currency: 'NPR',
           localTransactionDateTime: txn.localTransactionDateTime
         })) || []
-   ) ];
+  )];
 
       const successfulPayments = processPayments(allPayments.filter(p => p.status === 'S'));
 
@@ -141,8 +141,9 @@ const VotingData = () => {
         }
       });
 
+      // Filter out dates that have no votes at all
       const seriesData = last5Days
-        .filter(date => dailyVotes[date])
+        .filter(date => dailyVotes[date] && dailyVotes[date].some(votes => votes > 0))
         .map(date => ({
           name: formatDisplayDate(date),
           data: dailyVotes[date]
@@ -151,7 +152,7 @@ const VotingData = () => {
 
       setState(prev => ({
         ...prev,
-        series: seriesData.length ? seriesData : [],
+        series: seriesData,
         loading: false,
         currentDate: today.toLocaleDateString("en-US", { 
           year: "numeric", 
