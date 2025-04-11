@@ -5,7 +5,8 @@ import { useToken } from '../../context/TokenContext';
 import Modal from '../../components/modal';
 import { MdDelete, MdEdit, MdVisibility } from 'react-icons/md';
 import AddCandidateModal from '../../components/ViewRegistration/AddCandidate';
-import useS3Upload from '../../hooks/useS3Upload'; 
+import useS3Upload from '../../hooks/useS3Upload';
+import ContestantListModal from './ContestantListModal';
 
 const ViewRegistration = () => {
   const [events, setEvents] = useState([]);
@@ -16,6 +17,8 @@ const ViewRegistration = () => {
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showAddCandidateModal, setShowAddCandidateModal] = useState(false);
+  const [showContestantModal, setShowContestantModal] = useState(false);
+  const [selectedEventId, setSelectedEventId] = useState(null);
   const [message, setMessage] = useState(null);
   const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
   const [eventToDelete, setEventToDelete] = useState(null);
@@ -23,7 +26,6 @@ const ViewRegistration = () => {
   const [uploadProgress, setUploadProgress] = useState(0);
   const { token } = useToken();
 
-  // Call the hook at the top level
   const { uploadFile } = useS3Upload();
 
   useEffect(() => {
@@ -125,7 +127,7 @@ const ViewRegistration = () => {
               const url = `https://${process.env.REACT_APP_AWS_S3_BUCKET}.s3.${process.env.REACT_APP_AWS_REGION}.amazonaws.com/${selectedFile.name}`;
               resolve(url); 
             },
-            (err) => reject(err) // Handle upload errors
+            (err) => reject(err)
           );
         });
       }
@@ -275,7 +277,6 @@ const ViewRegistration = () => {
                   ) : (
                     <p>No image available</p>
                   )}
-                  {/* Edit Button on Image */}
                   <button
                     type="button"
                     onClick={() => document.getElementById('imageUpload').click()}
@@ -283,7 +284,6 @@ const ViewRegistration = () => {
                   >
                     <MdEdit style={styles.editIcon} />
                   </button>
-                  {/* Hidden File Input */}
                   <input
                     id="imageUpload"
                     type="file"
@@ -324,6 +324,16 @@ const ViewRegistration = () => {
                 >
                   Add Contestant
                 </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedEventId(selectedEvent.id);
+                    setShowContestantModal(true);
+                  }}
+                  style={styles.seeContestantsButton}
+                >
+                  See Contestants
+                </button>
               </div>
             </form>
           </div>
@@ -333,12 +343,19 @@ const ViewRegistration = () => {
       {/* Add Candidate Modal */}
       {showAddCandidateModal && (
         <AddCandidateModal
-          events={userEvents} // Only pass user's events
+          events={userEvents}
           onClose={handleCloseAddCandidateModal}
           onSubmit={(candidate) => {
-            // Handle the submission of the candidate
             handleCloseAddCandidateModal();
           }}
+        />
+      )}
+
+      {/* Contestant List Modal */}
+      {showContestantModal && (
+        <ContestantListModal 
+          eventId={selectedEventId} 
+          onClose={() => setShowContestantModal(false)} 
         />
       )}
 
@@ -477,6 +494,17 @@ const styles = {
   addCandidateButton: {
     padding: '12px 20px',
     backgroundColor: '#3498db',
+    color: '#fff',
+    border: 'none',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontWeight: '600',
+    flex: 1,
+    minWidth: '120px',
+  },
+  seeContestantsButton: {
+    padding: '12px 20px',
+    backgroundColor: '#9b59b6',
     color: '#fff',
     border: 'none',
     borderRadius: '8px',
