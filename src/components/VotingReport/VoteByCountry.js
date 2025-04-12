@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import Chart from "react-apexcharts";
 import { FaDownload } from "react-icons/fa";
 import { useParams } from "react-router-dom";
 import { useToken } from "../../context/TokenContext";
 import { calculateVotes } from "../AmountCalculator";
+import styles from "../../assets/VoteByCountry.module.css";
 
-// API Configuration
+// Constants
 const API_CONFIG = {
   BASE_URL: "https://auth.zeenopay.com",
   ENDPOINTS: {
@@ -19,6 +20,18 @@ const API_CONFIG = {
     START_DATE: "2025-03-20"
   }
 };
+
+const NEPAL_PROCESSORS = ["ESEWA", "KHALTI", "FONEPAY", "PRABHUPAY", "NQR", "QR"];
+const INDIA_PROCESSORS = ["PHONEPE"];
+const INTERNATIONAL_PROCESSORS = ["PAYU", "STRIPE"];
+
+// Memoized processor labels
+const nepalLabels = NEPAL_PROCESSORS.map((processor) => {
+  if (processor === "NQR") return "NepalPayQR";
+  if (processor === "QR") return "FonePayQR";
+  if (processor === "FONEPAY") return "iMobile Banking";
+  return processor;
+});
 
 // API Service
 const apiService = {
@@ -60,41 +73,88 @@ const VoteByCountry = () => {
   const [paymentInfo, setPaymentInfo] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
 
-  const nepalProcessors = ["ESEWA", "KHALTI", "FONEPAY", "PRABHUPAY", "NQR", "QR"];
-  const indiaProcessors = ["PHONEPE"];
-  const internationalProcessors = ["PAYU", "STRIPE"];
-
-  // Enhanced function to extract intent_id from NQR transaction
-  const getIntentIdFromNQR = (addenda1, addenda2) => {
+  const getIntentIdFromNQR = useCallback((addenda1, addenda2) => {
     try {
-      // Combine both addenda fields
       const combined = `${addenda1 || ''}-${addenda2 || ''}`;
-      
-      // Try to find hex pattern
       const hexMatch = combined.match(/vnpr-([a-f0-9]+)/i);
       if (hexMatch?.[1]) {
         return parseInt(hexMatch[1], 16);
       }
-      
-      // Alternative pattern matching if the above fails
       const altMatch = combined.match(/(\d+)/);
       if (altMatch?.[1]) {
         return parseInt(altMatch[1], 10);
       }
-      
       return null;
     } catch (error) {
       console.error('Error extracting intent_id from NQR:', error);
       return null;
     }
-  };
+  }, []);
+
+  const processVotingData = useCallback((paymentIntents, contestantMap) => {
+    // Filter successful transactions only
+    const successfulPaymentIntents = paymentIntents.filter(
+      (item) => item.status === 'S'
+    );
+
+    const nepalData = successfulPaymentIntents.filter((item) => {
+      if (!NEPAL_PROCESSORS.includes(item.processor?.toUpperCase())) return false;
+      
+      const votes = calculateVotes(item.amount, item.currency);
+      return votes >= 10; // Only include if 10+ votes
+    });
+
+    const nepalVotesData = NEPAL_PROCESSORS.map((processor) => {
+      const processorData = nepalData.filter(
+        (item) => item.processor?.toUpperCase() === processor
+      );
+      return processorData.reduce(
+        (sum, item) => sum + calculateVotes(item.amount, item.currency), 
+        0
+      );
+    });
+
+    const indiaData = successfulPaymentIntents.filter((item) => {
+      if (!INDIA_PROCESSORS.includes(item.processor?.toUpperCase())) return false;
+      
+      const votes = calculateVotes(item.amount, "INR");
+      return votes >= 10; 
+    });
+
+    const internationalData = successfulPaymentIntents.filter((item) => {
+      if (!INTERNATIONAL_PROCESSORS.includes(item.processor?.toUpperCase())) return false;
+      
+      const currency = item.currency || 'USD';
+      const votes = calculateVotes(item.amount, currency);
+      return votes >= 10; // Only include if 10+ votes
+    });
+
+    const indiaVotes = indiaData.reduce(
+      (sum, item) => sum + calculateVotes(item.amount, "INR"), 
+      0
+    );
+
+    const internationalVotes = internationalData.reduce(
+      (sum, item) => {
+        const currency = item.currency || 'USD';
+        return sum + calculateVotes(item.amount, currency);
+      }, 0
+    );
+
+    // Update state
+    setNepalVotes(nepalVotesData);
+    setTotalVotesNepal(nepalVotesData.reduce((a, b) => a + b, 0));
+    setGlobalVotes([indiaVotes, internationalVotes]);
+    setTotalVotesGlobal(indiaVotes + internationalVotes);
+  }, []);
 
   useEffect(() => {
+    if (!token) return;
+
     const fetchData = async () => {
       try {
         setIsLoading(true);
         
-        // Fetch all required data
         const [events, contestants, regularPayments, qrPayments] = await Promise.all([
           apiService.get(API_CONFIG.ENDPOINTS.EVENTS, token),
           apiService.get(API_CONFIG.ENDPOINTS.CONTESTANTS, token, { event_id }),
@@ -102,25 +162,21 @@ const VoteByCountry = () => {
           apiService.get(API_CONFIG.ENDPOINTS.QR_INTENTS, token, { event_id })
         ]);
 
-        // Set payment info from event data
         const event = events.find(e => e.id === parseInt(event_id));
         if (event) setPaymentInfo(event.payment_info);
 
-        // Create contestant map for quick lookup
         const contestantMap = contestants.reduce((map, contestant) => {
           map[contestant.id] = contestant;
           return map;
         }, {});
 
-        // Filter and process regular payments
         const filteredRegularPayments = regularPayments
           .filter(payment => payment.intent_id && contestantMap[payment.intent_id])
           .map(payment => ({
             ...payment,
-            currency: payment.currency || 'USD' // Default currency
+            currency: payment.currency || 'USD'
           }));
 
-        // Filter and process QR payments (excluding NQR)
         const filteredQRPayments = qrPayments
           .filter(payment => 
             payment.processor?.toUpperCase() === "QR" && 
@@ -129,10 +185,9 @@ const VoteByCountry = () => {
           )
           .map(payment => ({
             ...payment,
-            currency: 'NPR' // QR payments are always NPR
+            currency: 'NPR'
           }));
 
-        // Try to fetch NQR transactions if needed
         let nqrTransactions = [];
         try {
           const today = new Date().toISOString().split('T')[0];
@@ -146,7 +201,7 @@ const VoteByCountry = () => {
           );
 
           nqrTransactions = (nqrData.transactions?.responseBody || [])
-            .filter(txn => txn.debitStatus === '000') // Successful transactions only
+            .filter(txn => txn.debitStatus === '000')
             .map(txn => {
               const intent_id = getIntentIdFromNQR(txn.addenda1, txn.addenda2);
               return {
@@ -167,15 +222,13 @@ const VoteByCountry = () => {
           console.error("Error fetching NQR transactions:", error);
         }
 
-        // Combine all payment sources
         const allPaymentIntents = [
           ...filteredRegularPayments,
           ...filteredQRPayments,
           ...nqrTransactions
         ];
 
-        // Process the voting data
-        processVotingData(allPaymentIntents);
+        processVotingData(allPaymentIntents, contestantMap);
       } catch (error) {
         console.error("Error fetching data:", error);
       } finally {
@@ -183,68 +236,11 @@ const VoteByCountry = () => {
       }
     };
 
-    const processVotingData = (paymentIntents) => {
-      // Filter successful transactions only
-      const successfulPaymentIntents = paymentIntents.filter(
-        (item) => item.status === 'S'
-      );
+    fetchData();
+  }, [event_id, token, getIntentIdFromNQR, processVotingData]);
 
-      // Process Nepal payments
-      const nepalData = successfulPaymentIntents.filter((item) =>
-        nepalProcessors.includes(item.processor?.toUpperCase())
-      );
-
-      const nepalVotesData = nepalProcessors.map((processor) => {
-        const processorData = nepalData.filter(
-          (item) => item.processor?.toUpperCase() === processor
-        );
-        return processorData.reduce(
-          (sum, item) => sum + calculateVotes(item.amount, item.currency), 
-          0
-        );
-      });
-
-      // Process Global payments
-      const indiaData = successfulPaymentIntents.filter((item) =>
-        indiaProcessors.includes(item.processor?.toUpperCase())
-      );
-      const internationalData = successfulPaymentIntents.filter((item) =>
-        internationalProcessors.includes(item.processor?.toUpperCase())
-      );
-
-      const indiaVotes = indiaData.reduce(
-        (sum, item) => sum + calculateVotes(item.amount, "INR"), 
-        0
-      );
-
-      const internationalVotes = internationalData.reduce(
-        (sum, item) => {
-          const currency = item.currency || 'USD';
-          return sum + calculateVotes(item.amount, currency);
-        }, 0
-      );
-
-      // Update state
-      setNepalVotes(nepalVotesData);
-      setTotalVotesNepal(nepalVotesData.reduce((a, b) => a + b, 0));
-      setGlobalVotes([indiaVotes, internationalVotes]);
-      setTotalVotesGlobal(indiaVotes + internationalVotes);
-    };
-
-    if (token) {
-      fetchData();
-    }
-  }, [event_id, token]);
-
-  // Update labels for Nepal chart
-  const nepalLabels = nepalProcessors.map((processor) => {
-    if (processor === "NQR") return "NepalPayQR";
-    if (processor === "QR") return "FonePayQR";
-    if (processor === "FONEPAY") return "iMobile Banking";
-    return processor;
-  });
-
-  const pieOptionsNepal = {
+  // Memoized chart options
+  const pieOptionsNepal = useMemo(() => ({
     chart: {
       type: "pie",
       height: 350,
@@ -254,14 +250,12 @@ const VoteByCountry = () => {
     legend: { position: "bottom" },
     tooltip: {
       y: {
-        formatter: function(value) {
-          return value.toLocaleString();
-        }
+        formatter: (value) => value.toLocaleString()
       }
     }
-  };
+  }), []);
 
-  const pieOptionsGlobal = {
+  const pieOptionsGlobal = useMemo(() => ({
     chart: {
       type: "pie",
       height: 350,
@@ -271,39 +265,37 @@ const VoteByCountry = () => {
     legend: { position: "bottom" },
     tooltip: {
       y: {
-        formatter: function(value) {
-          return value.toLocaleString();
-        }
+        formatter: (value) => value.toLocaleString()
       }
     }
-  };
+  }), []);
 
   // Check if there is no data
-  const hasNoData = nepalVotes.length === 0 && globalVotes.length === 0;
-  const hasNoNepalVotes = nepalVotes.every((vote) => vote === 0);
-  const hasNoGlobalVotes = globalVotes.every((vote) => vote === 0);
+  const hasNoData = totalVotesNepal === 0 && totalVotesGlobal === 0;
+  const hasNoNepalVotes = totalVotesNepal === 0;
+  const hasNoGlobalVotes = totalVotesGlobal === 0;
 
   return (
-    <div className="chart-container">
-      <div className="header">
+    <div className={styles.container}>
+      <div className={styles.header}>
         <h3>Vote Breakdown</h3>
-        <button className="export-btn">
-          <FaDownload className="export-icon" /> Export
+        <button className={styles.exportBtn}>
+          <FaDownload className={styles.exportIcon} /> Export
         </button>
       </div>
 
       {isLoading ? (
-        <div className="loading">Loading...</div>
+        <div className={styles.loading}>Loading...</div>
       ) : hasNoData ? (
-        <div className="no-data">No any vote data</div>
+        <div className={styles.noData}>No qualifying vote data</div>
       ) : (
-        <div className="charts">
-          <div className="report">
-            <div className="chart-header">
+        <div className={styles.charts}>
+          <div className={styles.report}>
+            <div className={styles.chartHeader}>
               <h3>Votes from Nepal</h3>
             </div>
             {hasNoNepalVotes ? (
-              <div className="no-nepal-votes">No any Votes from Nepal</div>
+              <div className={styles.noNepalVotes}>No qualifying votes from Nepal</div>
             ) : (
               <>
                 <Chart
@@ -312,17 +304,17 @@ const VoteByCountry = () => {
                   type="pie"
                   height={350}
                 />
-                <div className="total-votes">Total Votes: {totalVotesNepal.toLocaleString()}</div>
+                <div className={styles.totalVotes}>Total Votes: {totalVotesNepal.toLocaleString()}</div>
               </>
             )}
           </div>
 
-          <div className="report">
-            <div className="chart-header">
+          <div className={styles.report}>
+            <div className={styles.chartHeader}>
               <h3>Votes from Global</h3>
             </div>
             {hasNoGlobalVotes ? (
-              <div className="no-global-votes">No any Global Votes</div>
+              <div className={styles.noGlobalVotes}>No qualifying global votes</div>
             ) : (
               <>
                 <Chart
@@ -331,158 +323,12 @@ const VoteByCountry = () => {
                   type="pie"
                   height={350}
                 />
-                <div className="total-votes">Total Votes: {totalVotesGlobal.toLocaleString()}</div>
+                <div className={styles.totalVotes}>Total Votes: {totalVotesGlobal.toLocaleString()}</div>
               </>
             )}
           </div>
         </div>
       )}
-
-      <style jsx>{`
-        .chart-container {
-          display: flex;
-          flex-direction: column;
-          align-items: flex-start;
-          width: 100%;
-          padding-bottom: 20px;
-        }
-
-        .header {
-          width: 100%;
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin-bottom: 10px;
-          margin-top: 30px;
-        }
-
-        .header h3 {
-          margin: 0;
-          font-size: 24px;
-          color: #333;
-        }
-
-        .export-btn {
-          background-color: #028248;
-          color: white;
-          padding: 10px 20px;
-          border: none;
-          border-radius: 4px;
-          cursor: pointer;
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          font-size: 16px;
-          transition: background-color 0.3s;
-        }
-
-        .export-btn:hover {
-          background-color: #026e3d;
-        }
-
-        .charts {
-          display: flex;
-          justify-content: space-between;
-          width: 100%;
-          gap: 20px;
-          margin-top: 20px;
-        }
-
-        .report {
-          background-color: white;
-          padding: 20px;
-          border-radius: 8px;
-          width: 48%;
-          box-shadow: 0px 4px 12px rgba(0, 0, 0, 0.1);
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: space-between;
-        }
-
-        .chart-header {
-          display: flex;
-          justify-content: center;
-          align-items: center;
-          width: 100%;
-          margin-bottom: 15px;
-        }
-
-        .chart-header h3 {
-          margin: 0;
-          font-size: 18px;
-          color: #444;
-        }
-
-        .total-votes {
-          text-align: center;
-          font-size: 18px;
-          margin-top: 20px;
-          padding: 10px;
-          width: 100%;
-          box-sizing: border-box;
-          font-weight: bold;
-          color: #333;
-          background-color: #f8f9fa;
-          border-radius: 4px;
-        }
-
-        .loading,
-        .no-data,
-        .no-nepal-votes,
-        .no-global-votes {
-          text-align: center;
-          font-size: 18px;
-          margin-top: 20px;
-          width: 100%;
-          color: #666;
-          padding: 20px;
-          background-color: #f8f9fa;
-          border-radius: 8px;
-        }
-
-        /* Mobile responsiveness */
-        @media (max-width: 768px) {
-          .header {
-            flex-direction: column;
-            align-items: flex-start;
-            gap: 10px;
-          }
-
-          .header h3 {
-            font-size: 20px;
-          }
-
-          .export-btn {
-            width: 90%;
-            justify-content: center;
-          }
-
-          .charts {
-            flex-direction: column;
-            gap: 20px;
-          }
-
-          .report {
-            width: 100%;
-            margin-bottom: 20px;
-          }
-
-          .total-votes {
-            font-size: 16px;
-          }
-        }
-
-        @media (max-width: 480px) {
-          .header h3 {
-            font-size: 18px;
-          }
-
-          .total-votes {
-            font-size: 14px;
-          }
-        }
-      `}</style>
     </div>
   );
 };

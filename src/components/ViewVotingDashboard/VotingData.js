@@ -77,23 +77,31 @@ const VotingData = () => {
   }), [state.categories]);
 
   const processPayments = useCallback((payments) => {
-    return payments.map(payment => {
-      const processor = payment.processor?.toUpperCase();
-      let currency = payment.currency?.toUpperCase() || 'USD';
-      
-      if (["ESEWA", "KHALTI", "FONEPAY", "PRABHUPAY", "QR", "NQR"].includes(processor)) {
-        currency = 'NPR';
-      } else if (["PHONEPE", "PAYU"].includes(processor)) {
-        currency = 'INR';
-      }
-      
-      return {
-        ...payment,
-        currency,
-        votes: calculateVotes(payment.amount, currency),
-        date: new Date(payment.updated_at || payment.localTransactionDateTime)
-      };
-    });
+    return payments
+      .map(payment => {
+        const processor = payment.processor?.toUpperCase();
+        let currency = payment.currency?.toUpperCase() || 'USD';
+        
+        if (["ESEWA", "KHALTI", "FONEPAY", "PRABHUPAY", "QR", "NQR"].includes(processor)) {
+          currency = 'NPR';
+        } else if (["PHONEPE", "PAYU"].includes(processor)) {
+          currency = 'INR';
+        }
+        
+        const votes = calculateVotes(payment.amount, currency);
+        
+        // Only include payments with 10+ votes
+        if (votes >= 10) {
+          return {
+            ...payment,
+            currency,
+            votes,
+            date: new Date(payment.updated_at || payment.localTransactionDateTime)
+          };
+        }
+        return null;
+      })
+      .filter(Boolean); // Remove null entries (payments with <10 votes)
   }, []);
 
   const processVotingData = useCallback(async () => {
@@ -215,7 +223,7 @@ const VotingData = () => {
       <div className={styles.chartCard}>
         <h3 className={styles.votingH3}>Voting Activity Comparison (Last 5 Days)</h3>
         <div className={styles.chartHeader}>
-          <h3 className={styles.h3Real}>Daily Votes by Time Intervals</h3>
+          <h3 className={styles.h3Real}>Daily Votes by Time Intervals (10+ votes per transaction)</h3>
           <div className={styles.dateDisplay}>{state.currentDate}</div>
         </div>
         {hasVotingData ? (
@@ -228,7 +236,7 @@ const VotingData = () => {
           />
         ) : (
           <div className={styles.noDataMessage}>
-            No voting data available for the last 5 days.
+            No qualifying voting data (10+ votes per transaction) available for the last 5 days.
           </div>
         )}
       </div>

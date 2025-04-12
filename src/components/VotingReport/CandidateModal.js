@@ -112,7 +112,8 @@ const CandidateModel = ({
         
         if (intentId && String(intentId) === String(contestantId)) {
           const votes = calculateVotes(txn.amount, 'NPR');
-          if (votes > 0) {
+          // Only include if votes are 10 or more
+          if (votes >= 10) {
             processedData.push({
               name: txn.payerName,
               phone_no: txn.payerMobileNumber,
@@ -165,6 +166,9 @@ const CandidateModel = ({
 
         const votes = calculateVotes(intent.amount, currency);
 
+        // Only include if votes are 10 or more
+        if (votes < 10) return null;
+
         let paymentMethod;
         if (processor === "QR") paymentMethod = "FonePayQR";
         else if (processor === "FONEPAY") paymentMethod = "iMobile Banking";
@@ -179,7 +183,7 @@ const CandidateModel = ({
           votes: votes,
           transactionTime: intent.updated_at,
         };
-      }).filter(voter => voter.votes > 0);
+      }).filter(voter => voter !== null); // Filter out null entries (votes < 10)
 
       return voterList;
     } catch (error) {
@@ -239,7 +243,7 @@ const CandidateModel = ({
       const updatedData = {
         ...formData,
         avatar: imgUrl,
-        misc_kv: formData.misc_kv.toString() // Ensure contestant number is string
+        misc_kv: formData.misc_kv.toString()
       };
       
       onUpdate(updatedData);
@@ -425,7 +429,7 @@ const CandidateModel = ({
                      candidate.status === "C" ? "Closed" : "Unknown"}
                   </span>
                 </p>
-                <p><strong>Total Votes:</strong> {totalVotes} Votes</p>
+                <p><strong>Total Votes :</strong> {totalVotes} Votes</p>
                 <p><strong>Reel Link:</strong> 
                   {candidate.shareable_link ? (
                     <a href={candidate.shareable_link} target="_blank" rel="noopener noreferrer">
@@ -448,6 +452,8 @@ const CandidateModel = ({
               <p>Loading voter details...</p>
             ) : voterError ? (
               <p className="error-message">{voterError}</p>
+            ) : voterDetails.length === 0 ? (
+              <p className="no-voters-message">No qualifying votes (10+ per transaction) found for this candidate</p>
             ) : (
               <div className="table-wrapper">
                 <div className="table-header-wrapper">
@@ -466,30 +472,22 @@ const CandidateModel = ({
                 <div className="table-body-wrapper">
                   <table className="voters-table">
                     <tbody>
-                      {voterDetails.length > 0 ? (
-                        voterDetails.map((voter, index) => (
-                          <tr key={index}>
-                            <td>{voter.name}</td>
-                            <td>
-                              <span style={{
-                                fontWeight: "bold",
-                                color: getProcessorColor(voter.processor),
-                              }}>
-                                {voter.processor}
-                              </span>
-                            </td>
-                            <td>{voter.votes}</td>
-                            <td>{voter.phone_no}</td>
-                            <td>{formatTransactionTime(voter.transactionTime)}</td>
-                          </tr>
-                        ))
-                      ) : (
-                        <tr>
-                          <td colSpan="5" style={{ textAlign: "center" }}>
-                            No voters available.
+                      {voterDetails.map((voter, index) => (
+                        <tr key={index}>
+                          <td>{voter.name}</td>
+                          <td>
+                            <span style={{
+                              fontWeight: "bold",
+                              color: getProcessorColor(voter.processor),
+                            }}>
+                              {voter.processor}
+                            </span>
                           </td>
+                          <td>{voter.votes}</td>
+                          <td>{voter.phone_no}</td>
+                          <td>{formatTransactionTime(voter.transactionTime)}</td>
                         </tr>
-                      )}
+                      ))}
                     </tbody>
                   </table>
                 </div>

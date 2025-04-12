@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import "../../assets/table.css";
 import { useToken } from "../../context/TokenContext";
 import { useParams } from "react-router-dom";
-import { FaEye, FaEdit, FaTrash, FaDownload, FaSort, FaSortAmountDown, FaSortUp, FaSortDown } from "react-icons/fa";
+import { FaEye, FaEdit, FaTrash, FaDownload, FaSortUp, FaSortDown } from "react-icons/fa";
 import * as XLSX from "xlsx";
 import CandidateModel from "./CandidateModal";
 import { calculateVotes } from '../AmountCalculator';
@@ -82,7 +82,6 @@ const apiService = {
     return response.json();
   },
 
-  // Helper methods specific to our needs
   getContestants: async (event_id, token) => {
     return apiService.get(API_CONFIG.ENDPOINTS.CONTESTANTS, token, { event_id });
   },
@@ -104,7 +103,6 @@ const apiService = {
   }
 };
 
-// Helper function to extract intent_id from NQR transaction
 const getIntentIdFromNQR = (addenda1, addenda2) => {
   try {
     const combined = `${addenda1}-${addenda2}`;
@@ -130,9 +128,9 @@ const CandidateTable = () => {
   const [isEditMode, setIsEditMode] = useState(false);
   const [paymentInfo, setPaymentInfo] = useState(null);
   const [sortConfig, setSortConfig] = useState({
-    key: "misc_kv",  // Default sort by C.No.
-    direction: "asc", // Default ascending order
-    numeric: true     // Treat as numeric for proper sorting
+    key: "misc_kv",
+    direction: "asc",
+    numeric: true
   });
   const itemsPerPage = 10;
 
@@ -167,9 +165,9 @@ const CandidateTable = () => {
 
   const processCandidates = useCallback((contestants, payments) => {
     return contestants.map(contestant => {
-      const totalVotes = payments
+      const votesData = payments
         .filter(p => p.intent_id?.toString() === contestant.id.toString())
-        .reduce((sum, payment) => {
+        .reduce((result, payment) => {
           const processor = payment.processor?.toUpperCase();
           let currency = payment.currency?.toUpperCase() || 'USD';
 
@@ -177,17 +175,24 @@ const CandidateTable = () => {
             currency = 'NPR';
           } else if (["PHONEPE", "PAYU"].includes(processor)) {
             currency = 'INR';
-          } else if (processor === "STRIPE") {
-            currency = payment.currency?.toUpperCase() || 'USD';
           }
 
-          return sum + calculateVotes(payment.amount, currency);
-        }, 0);
+          const votes = calculateVotes(payment.amount, currency);
+          
+          // Only include if votes are 10 or more
+          if (votes >= 10) {
+            result.totalVotes += votes;
+            result.validPayments++;
+          }
+          
+          return result;
+        }, { totalVotes: 0, validPayments: 0 });
 
       return { 
         ...contestant, 
-        votes: totalVotes,
-        formattedVotes: totalVotes.toLocaleString()
+        votes: votesData.totalVotes,
+        hasValidVotes: votesData.validPayments > 0,
+        formattedVotes: votesData.totalVotes.toLocaleString()
       };
     });
   }, []);
@@ -209,13 +214,13 @@ const CandidateTable = () => {
         apiService.get(API_CONFIG.ENDPOINTS.EVENTS, token)
       ]);
 
-      // Set payment info from event data
       const event = events.find(e => e.id === parseInt(event_id));
       if (!event) throw new Error("Event not found");
       setPaymentInfo(event.payment_info);
 
-      // Process candidates and apply initial sorting
-      const processed = processCandidates(contestants, payments);
+      const processed = processCandidates(contestants, payments)
+        .filter(candidate => candidate.hasValidVotes); 
+      
       setData(processed);
     } catch (err) {
       setError(err.message);
@@ -228,19 +233,16 @@ const CandidateTable = () => {
     fetchData();
   }, [fetchData]);
 
-  // Enhanced sorting logic
   const sortedData = React.useMemo(() => {
     let sortableData = [...data];
     if (sortConfig.key) {
       sortableData.sort((a, b) => {
-        // Handle numeric sorting for specific keys
         if (sortConfig.numeric) {
           const numA = parseFloat(a[sortConfig.key]) || 0;
           const numB = parseFloat(b[sortConfig.key]) || 0;
           return sortConfig.direction === "asc" ? numA - numB : numB - numA;
         }
         
-        // Default string comparison
         const valueA = String(a[sortConfig.key] || "").toLowerCase();
         const valueB = String(b[sortConfig.key] || "").toLowerCase();
         
@@ -256,14 +258,12 @@ const CandidateTable = () => {
     return sortableData;
   }, [data, sortConfig]);
 
-  // Handle sorting
   const requestSort = (key) => {
     let direction = "asc";
     if (sortConfig.key === key && sortConfig.direction === "asc") {
       direction = "desc";
     }
     
-    // Determine if this should be numeric sorting
     const numericKeys = ["misc_kv", "votes"];
     setSortConfig({ 
       key, 
@@ -410,7 +410,6 @@ const CandidateTable = () => {
             alignItems: "center",
             minWidth: "fit-content" 
           }}>
-            {/* Sort by Dropdown */}
             <div style={{ position: "relative", minWidth: "120px" }}>
               <select
                 id="sort-by"
@@ -438,20 +437,8 @@ const CandidateTable = () => {
                 <option value="misc_kv">C.No.</option>
                 <option value="votes">Votes</option>
               </select>
-              <FaSortAmountDown 
-                style={{
-                  position: "absolute",
-                  right: "12px",
-                  top: "50%",
-                  transform: "translateY(-50%)",
-                  fontSize: "14px",
-                  color: "#495057",
-                  pointerEvents: "none",
-                }}
-              />
             </div>
 
-            {/* Ascending/Descending Button */}
             <button
               onClick={() =>
                 setSortConfig({
@@ -504,7 +491,6 @@ const CandidateTable = () => {
         </button>
       </div>
 
-      {/* Table */}
       <div className="table-wrapper">
         <table>
           <thead>
@@ -546,7 +532,7 @@ const CandidateTable = () => {
             {paginatedData.length === 0 ? (
               <tr>
                 <td colSpan="7" style={{ textAlign: "center" }}>
-                  No candidates found.
+                  No candidates with 10+ votes found.
                 </td>
               </tr>
             ) : (
@@ -610,7 +596,6 @@ const CandidateTable = () => {
         </table>
       </div>
 
-      {/* Pagination */}
       <div className="pagination">
         {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
           <button
@@ -625,7 +610,6 @@ const CandidateTable = () => {
         ))}
       </div>
 
-      {/* Modal */}
       <CandidateModel
         visible={isModalVisible}
         onClose={handleCloseModal}

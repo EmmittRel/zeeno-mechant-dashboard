@@ -189,7 +189,7 @@ const VotingCardComponent = () => {
     }
   }, [event_id, token]);
 
-  // Calculate votes - split into memoized steps
+  // Calculate votes - only include transactions with 10+ votes
   const successfulIntents = useMemo(() => {
     const { paymentIntents, qrIntents, nqrTransactions } = data;
     
@@ -199,7 +199,8 @@ const VotingCardComponent = () => {
       return hexMatch?.[1] ? parseInt(hexMatch[1], 16) : null;
     };
 
-    return [
+    // Process all transactions first
+    const allIntents = [
       ...paymentIntents.filter(intent => intent.status === 'S'),
       ...qrIntents.filter(intent => intent.status === 'S'),
       ...nqrTransactions.map(txn => ({
@@ -210,6 +211,22 @@ const VotingCardComponent = () => {
         status: 'S'
       }))
     ];
+
+    // Filter out intents with less than 10 votes
+    return allIntents.filter(intent => {
+      let currency = 'USD';
+      const processor = intent.processor?.toUpperCase();
+
+      if (["ESEWA", "KHALTI", "FONEPAY", "PRABHUPAY", "QR", "NQR"].includes(processor)) {
+        currency = 'NPR';
+      } else if (["PHONEPE", "PAYU"].includes(processor)) {
+        currency = 'INR';
+      } else if (processor === "STRIPE") {
+        currency = intent.currency?.toUpperCase() || 'USD';
+      }
+
+      return calculateVotes(intent.amount, currency) >= 10;
+    });
   }, [data]);
 
   const contestantsWithVotes = useMemo(() => {
@@ -243,7 +260,7 @@ const VotingCardComponent = () => {
     return {
       totalVotes,
       topPerformer,
-      hasTopPerformer: topPerformer && topPerformer.votes > 0,
+      hasTopPerformer: topPerformer && topPerformer.votes >= 10,
       contestants: contestantsWithVotes
     };
   }, [contestantsWithVotes]);
@@ -259,14 +276,18 @@ const VotingCardComponent = () => {
       title: "Total Votes",
       value: loading 
         ? "" 
-        : voteData.totalVotes.toLocaleString(),
+        : voteData.totalVotes > 0 
+          ? voteData.totalVotes.toLocaleString() 
+          : "No qualifying votes",
       subtext: loading ? "" : (
-        <div className="live-container">
-          <span className="live-dot"></span>
-          <span className="live-text">Live</span>
-        </div>
+        voteData.totalVotes > 0 ? (
+          <div className="live-container">
+            <span className="live-dot"></span>
+            <span className="live-text">Live</span>
+          </div>
+        ) : "Minimum 10 votes required"
       ),
-      subtextColor: "green",
+      subtextColor: voteData.totalVotes > 0 ? "green" : "red",
       isLoading: loading
     },
     {
@@ -276,13 +297,13 @@ const VotingCardComponent = () => {
         ? "" 
         : voteData.hasTopPerformer 
           ? voteData.topPerformer.name 
-          : "No data",
+          : "No qualifying performer",
       subtext: loading 
         ? "" 
         : voteData.hasTopPerformer 
           ? `${voteData.topPerformer.votes.toLocaleString()} Votes` 
-          : "No votes yet",
-      subtextColor: "green",
+          : "Needs 10+ votes",
+      subtextColor: voteData.hasTopPerformer ? "green" : "red",
       isLoading: loading
     }
   ], [loading, voteData]);

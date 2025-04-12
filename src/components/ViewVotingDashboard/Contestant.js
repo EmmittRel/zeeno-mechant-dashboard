@@ -47,9 +47,9 @@ const Contestant = ({ event_id, token }) => {
 
   const processCandidates = useCallback((contestants, payments) => {
     return contestants.map(contestant => {
-      const totalVotes = payments
+      const votesData = payments
         .filter(p => p.intent_id?.toString() === contestant.id.toString())
-        .reduce((sum, payment) => {
+        .reduce((result, payment) => {
           const processor = payment.processor?.toUpperCase();
           let currency = payment.currency?.toUpperCase() || 'USD';
 
@@ -59,13 +59,22 @@ const Contestant = ({ event_id, token }) => {
             currency = 'INR';
           }
 
-          return sum + calculateVotes(payment.amount, currency);
-        }, 0);
+          const votes = calculateVotes(payment.amount, currency);
+          
+          // Only include if votes are 10 or more
+          if (votes >= 10) {
+            result.totalVotes += votes;
+            result.validPayments++;
+          }
+          
+          return result;
+        }, { totalVotes: 0, validPayments: 0 });
 
       return { 
         ...contestant, 
-        votes: totalVotes,
-        formattedVotes: totalVotes.toLocaleString()
+        votes: votesData.totalVotes,
+        hasValidVotes: votesData.validPayments > 0,
+        formattedVotes: votesData.totalVotes.toLocaleString()
       };
     });
   }, []);
@@ -79,10 +88,13 @@ const Contestant = ({ event_id, token }) => {
         fetchAllPayments()
       ]);
 
+      const processedCandidates = processCandidates(contestants, payments)
+        .filter(candidate => candidate.hasValidVotes) // Only include candidates with at least one 10+ vote transaction
+        .sort((a, b) => b.votes - a.votes)
+        .slice(0, 5);
+
       setState({
-        candidates: processCandidates(contestants, payments)
-          .sort((a, b) => b.votes - a.votes)
-          .slice(0, 5),
+        candidates: processedCandidates,
         error: null,
         isLoading: false
       });
@@ -98,9 +110,7 @@ const Contestant = ({ event_id, token }) => {
 
   useEffect(() => {
     const abortController = new AbortController();
-    
     fetchData();
-    
     return () => {
       abortController.abort();
     };
@@ -149,7 +159,7 @@ const Contestant = ({ event_id, token }) => {
       <div className={styles.candidateCard}>
         <h3 className={styles.topH3}>Top Performing Candidates</h3>
         <div className={styles.emptyState}>
-          No candidates available at the moment.
+          No candidates with qualifying votes (10+ votes per transaction) available.
         </div>
       </div>
     );

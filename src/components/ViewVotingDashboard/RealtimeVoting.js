@@ -113,7 +113,7 @@ const RealtimeVoting = ({ id: event_id }) => {
     fetchContestants();
   }, [apiCall, event_id]);
 
-  // Process payment data
+  // Process payment data - updated to filter votes >= 10
   const processPaymentData = useCallback((payments, type) => {
     return payments
       .filter(item => item.event_id == event_id && item.status === 'S')
@@ -163,7 +163,8 @@ const RealtimeVoting = ({ id: event_id }) => {
           contestantName,
           id: `${item.created_at}-${Math.random().toString(36).substr(2, 9)}`
         };
-      });
+      })
+      .filter(item => item.votes >= 10); // Only include items with 10+ votes
   }, [event_id, contestants, formatDate]);
 
   // Fetch and process all payment data
@@ -188,14 +189,12 @@ const RealtimeVoting = ({ id: event_id }) => {
           )
         ]);
 
-        // Combine all data
+        // Combine all data - no need for additional vote filtering as it's done in processPaymentData
         const combinedData = [
           ...processedRegularData,
           ...processedQRData,
-          ...nqrTransactions
-        ]
-          .filter(item => item.votes > 0)
-          .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+          ...nqrTransactions.filter(item => item.votes >= 10) // Filter NQR transactions too
+        ].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
         setData(combinedData);
       } catch (error) {
@@ -208,7 +207,7 @@ const RealtimeVoting = ({ id: event_id }) => {
     fetchAllData();
   }, [token, event_id, eventData, contestants, nqrTransactions, processPaymentData, apiCall]);
 
-  // CSV export handler
+  // CSV export handler - will only export data with 10+ votes
   const handleExport = useCallback(() => {
     try {
       const headers = [
@@ -286,25 +285,6 @@ const RealtimeVoting = ({ id: event_id }) => {
         </button>
       </div>
 
-      {/* <div className="stats-summary">
-        <div className="stat-card">
-          <div className="stat-value">{data.length}</div>
-          <div className="stat-label">Total Votes</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-value">
-            {data.reduce((sum, item) => sum + item.votes, 0).toLocaleString()}
-          </div>
-          <div className="stat-label">Total Vote Count</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-value">
-            {new Set(data.map(item => item.currency)).size}
-          </div>
-          <div className="stat-label">Currencies</div>
-        </div>
-      </div> */}
-
       <div className="table-wrapper">
         <table>
           <thead>
@@ -328,7 +308,6 @@ const RealtimeVoting = ({ id: event_id }) => {
                   <td data-label="Voter">
                     <div className="voter-info">
                       <div className="voter-name">{row.name}</div>
-                      {/* <div className="voter-email">{row.email}</div> */}
                     </div>
                   </td>
                   <td data-label="Contestant">{row.contestantName}</td>
@@ -370,7 +349,7 @@ const RealtimeVoting = ({ id: event_id }) => {
                 <td colSpan="8" className="no-data">
                   <div className="no-data-content">
                     <FiLoader className="no-data-icon" />
-                    <div>No voting data available for this event</div>
+                    <div>No voting data available</div>
                   </div>
                 </td>
               </tr>
@@ -429,7 +408,6 @@ const RealtimeVoting = ({ id: event_id }) => {
           padding: 20px;
           background: #fff;
           border-radius: 12px;
-          // box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
         }
         
         .table-header {
@@ -474,40 +452,10 @@ const RealtimeVoting = ({ id: event_id }) => {
           opacity: 0.7;
         }
         
-        .stats-summary {
-          display: flex;
-          gap: 16px;
-          margin-bottom: 24px;
-          flex-wrap: wrap;
-        }
-        
-        .stat-card {
-          flex: 1;
-          min-width: 150px;
-          background: #f8f9fa;
-          border-radius: 8px;
-          padding: 16px;
-          box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-        }
-        
-        .stat-value {
-          font-size: 1.5rem;
-          font-weight: 700;
-          color: #2c3e50;
-          margin-bottom: 4px;
-        }
-        
-        .stat-label {
-          font-size: 0.85rem;
-          color: #7f8c8d;
-          font-weight: 500;
-        }
-        
         .table-wrapper {
           overflow-x: auto;
           -webkit-overflow-scrolling: touch;
           border-radius: 8px;
-          // border: 1px solid #e0e0e0;
         }
         
         table {
@@ -544,12 +492,6 @@ const RealtimeVoting = ({ id: event_id }) => {
         
         .voter-name {
           font-weight: 500;
-        }
-        
-        .voter-email {
-          font-size: 0.8rem;
-          color: #718096;
-          margin-top: 2px;
         }
         
         .votes-cell {
@@ -665,7 +607,6 @@ const RealtimeVoting = ({ id: event_id }) => {
         
          .top-h3 {
             font-size: 1.2rem;
-            // margin-bottom: 20px;
             color: #333;
             font-weight: 600;
             text-align: left;
@@ -679,14 +620,11 @@ const RealtimeVoting = ({ id: event_id }) => {
         /* Mobile responsiveness */
         @media (max-width: 768px) {
           .table-container {
-            // padding: 12px;
-          box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
-          margin-top: 30px;
+            margin-top: 30px;
           }
 
            .top-h3 {
             font-size: 1.2rem;
-         
             color: #333;
             font-weight: 600;
             text-align: left;
@@ -695,28 +633,16 @@ const RealtimeVoting = ({ id: event_id }) => {
           .table-header {
             flex-direction: column;
             align-items: flex-start;
-            
           }
           
           .export-btn {
             display: none;
           }
           
-          .stats-summary {
-            flex-direction: column;
-            gap: 12px;
-          }
-          
-          .stat-card {
-            min-width: 100%;
-          }
-          
           table {
             min-width: 100%;
             border: none;
           }
-
-          
           
           thead {
             display: none;
@@ -763,7 +689,6 @@ const RealtimeVoting = ({ id: event_id }) => {
             height: 32px;
             padding: 4px 8px;
           }
-
         }
       `}</style>
     </div>
