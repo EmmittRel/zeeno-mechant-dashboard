@@ -111,6 +111,9 @@ h2 {
 
 /* Mobile responsiveness */
 @media (max-width: 768px) {
+  .event-details-container{
+    padding-top: 80px;
+  }
   .field-grid {
     grid-template-columns: repeat(2, 1fr);
   }

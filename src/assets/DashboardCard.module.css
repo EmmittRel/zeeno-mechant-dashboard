@@ -90,6 +90,7 @@
   @media (max-width: 768px) {
     .cardsContainer {
       justify-content: space-between;
+      padding-top: 90px;
     }
     .card {
       flex: 1 1 calc(50% - 10px);

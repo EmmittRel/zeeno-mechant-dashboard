@@ -223,7 +223,7 @@ const VotingData = () => {
       <div className={styles.chartCard}>
         <h3 className={styles.votingH3}>Voting Activity Comparison (Last 5 Days)</h3>
         <div className={styles.chartHeader}>
-          <h3 className={styles.h3Real}>Daily Votes by Time Intervals (10+ votes per transaction)</h3>
+          <h3 className={styles.h3Real}>Daily Votes by Time Intervals</h3>
           <div className={styles.dateDisplay}>{state.currentDate}</div>
         </div>
         {hasVotingData ? (

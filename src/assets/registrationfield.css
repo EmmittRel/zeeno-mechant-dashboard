@@ -166,6 +166,9 @@
   .questions-grid {
     grid-template-columns: 1fr;
   }
+  /* .event-details-container{
+    padding-top: 80px;
+  } */
 }
 
 .submit-button {

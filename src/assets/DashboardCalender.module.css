@@ -16,6 +16,7 @@
   border-radius: 12px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   padding: 20px;
+  min-height: 350px;
 }
 
 .ongoingEventsSection {
@@ -51,6 +52,7 @@
   height: 80px;
   border-radius: 12px;
   object-fit: cover;
+  flex-shrink: 0;
 }
 
 .eventDetails {
@@ -58,6 +60,7 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  min-width: 0;
 }
 
 .eventDetails h3 {
@@ -65,6 +68,9 @@
   font-size: 20px;
   font-weight: 600;
   color: #333;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .eventDetails .category {
@@ -85,6 +91,7 @@
   gap: 8px;
   font-size: 14px;
   transition: background 0.3s ease;
+  flex-shrink: 0;
 }
 
 .viewEventButton:hover {
@@ -119,12 +126,14 @@
   justify-content: space-between;
   align-items: center;
   width: 100%;
+  margin-bottom: 20px;
 }
 
+/* Tablet Styles (768px - 1024px) */
 @media (max-width: 1024px) {
   .dashboardContainer {
     flex-direction: column;
-    align-items: center;
+    align-items: stretch;
   }
 
   .calendarSection,
@@ -139,9 +148,30 @@
   }
 
   .ongoingCard {
+    padding: 15px;
+    gap: 15px;
+  }
+
+  .eventsImage {
+    width: 70px;
+    height: 70px;
+  }
+
+  .eventDetails h3 {
+    font-size: 18px;
+  }
+
+  .viewEventButton {
+    padding: 8px 15px;
+    font-size: 13px;
+  }
+}
+
+/* Mobile Styles (below 600px) */
+@media (max-width: 600px) {
+  .ongoingCard {
     flex-direction: column;
     align-items: flex-start;
-    gap: 15px;
   }
 
   .eventsImage {
@@ -152,20 +182,17 @@
   .viewEventButton {
     width: 100%;
     justify-content: center;
-    padding: 8px 10px;
-    font-size: 12px;
+    margin-top: 10px;
   }
 }
 
 @media (max-width: 480px) {
   .dashboardContainer {
     padding: 10px;
-    margin-bottom: 30px;
   }
 
-  .calendarContainer,
   .ongoingCard {
-    padding: 10px;
+    padding: 12px;
   }
 
   .eventDetails h3 {
@@ -177,18 +204,24 @@
   }
 
   .viewEventButton {
-    padding: 6px 8px;
-    font-size: 11px;
-    margin-top: -30px;
+    padding: 8px 10px;
+    font-size: 12px;
   }
+}
 
-  .paginationControls {
-    margin-left: auto;
-    gap: 5px;
+/* Loading Skeleton */
+.skeleton {
+  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 8px;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
   }
-
-  .paginationControls button {
-    font-size: 1.2rem;
-    padding: 3px;
+  100% {
+    background-position: -200% 0;
   }
 }
