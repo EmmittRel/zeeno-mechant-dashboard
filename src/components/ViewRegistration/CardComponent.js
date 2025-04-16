@@ -207,9 +207,10 @@ const CardComponent = () => {
         @media (max-width: 768px) {
           .cards-container {
             justify-content: space-between;
+            padding-top: 90px;
           }
           .card {
-            flex: 1 1 calc(40% - 10px);
+            flex: 1 1 calc(0% - 10px);
             max-width: calc(40% - 10px);
             padding: 15px;
           }

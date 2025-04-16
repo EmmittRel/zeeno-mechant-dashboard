@@ -274,9 +274,10 @@ const RegistrationCardComponent = () => {
         @media (max-width: 768px) {
           .cards-container {
             justify-content: space-between;
+            padding-top: 80px;
           }
           .card {
-            flex: 1 1 calc(50% - 10px);
+            flex: 1 1 calc(0% - 10px);
             max-width: calc(50% - 10px);
             padding: 15px;
           }
