@@ -340,7 +340,7 @@ const PopupModal = ({ data, onClose }) => {
         /* Small mobile devices */
         @media (max-width: 480px) {
           .modal-overlay {
-            padding-top: 18vh;
+            padding-top: 15vh;
           }
           
           .modal-content {
