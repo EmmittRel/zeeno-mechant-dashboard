@@ -199,15 +199,15 @@ const PopupModal = ({ data, onClose }) => {
 
         .profile-image-container {
           position: absolute;
-          top: 15px;
+          top: 65px;
           right: 15px;
           z-index: 1;
         }
 
         .profile-image {
-          width: 60px;
-          height: 60px;
-          border-radius: 20%;
+          width: 160px;
+          height: 160px;
+          border-radius: 0%;
           object-fit: cover;
           border: 2px solid #f0f0f0;
         }
@@ -365,6 +365,12 @@ const PopupModal = ({ data, onClose }) => {
           .profile-image {
             width: 40px;
             height: 40px;
+            
+          }
+             .profile-image-container {
+           top: 50px;
+           
+            
           }
 
           .detail-item {
