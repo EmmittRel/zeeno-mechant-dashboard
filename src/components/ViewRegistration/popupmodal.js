@@ -281,8 +281,9 @@ const PopupModal = ({ data, onClose }) => {
         @media (max-width: 768px) {
           .modal-overlay {
             padding: 5px;
-            align-items: center;
+            align-items: flex-start;
             justify-content: center;
+            padding-top: 10vh;
           }
 
           .modal-content {
@@ -290,6 +291,7 @@ const PopupModal = ({ data, onClose }) => {
             max-height: 70vh;
             margin: 5px;
             overflow-y: auto;
+            margin-top: 20px;
           }
 
           .profile-image-container {
@@ -337,9 +339,14 @@ const PopupModal = ({ data, onClose }) => {
 
         /* Small mobile devices */
         @media (max-width: 480px) {
+          .modal-overlay {
+            padding-top: 18vh;
+          }
+          
           .modal-content {
             padding: 12px;
             max-height: 65vh;
+            margin-top: 15px;
           }
 
           .modal-close-btn {
@@ -375,9 +382,14 @@ const PopupModal = ({ data, onClose }) => {
         }
 
         @media (max-width: 360px) {
+          .modal-overlay {
+            padding-top: 5vh;
+          }
+          
           .modal-content {
             padding: 10px;
             max-height: 60vh;
+            margin-top: 10px;
           }
 
           h2 {
