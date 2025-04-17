@@ -158,27 +158,29 @@ const PopupModal = ({ data, onClose }) => {
           justify-content: center;
           align-items: center;
           z-index: 1000;
-          padding: 15px;
+          padding: 10px;
           box-sizing: border-box;
+          overflow: auto;
         }
 
         .modal-content {
           background-color: #fff;
           padding: 20px;
-          border-radius: 12px;
+          border-radius: 8px;
           width: 100%;
           max-width: 700px;
           max-height: 90vh;
           overflow-y: auto;
           box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
           position: relative;
+          margin: 10px;
         }
 
         .modal-close-btn {
-          position: absolute;
+          position: sticky;
           top: 10px;
           right: 10px;
-          background: none;
+          background: #fff;
           border: none;
           font-size: 20px;
           cursor: pointer;
@@ -189,18 +191,22 @@ const PopupModal = ({ data, onClose }) => {
           display: flex;
           align-items: center;
           justify-content: center;
+          float: right;
+          border-radius: 50%;
+          box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+          margin-left: auto;
         }
 
         .profile-image-container {
           position: absolute;
-          top: 50px;
+          top: 15px;
           right: 15px;
           z-index: 1;
         }
 
         .profile-image {
-          width: 70px;
-          height: 70px;
+          width: 60px;
+          height: 60px;
           border-radius: 20%;
           object-fit: cover;
           border: 2px solid #f0f0f0;
@@ -243,6 +249,11 @@ const PopupModal = ({ data, onClose }) => {
           gap: 10px;
           margin-top: 20px;
           flex-wrap: wrap;
+          position: sticky;
+          bottom: 0;
+          background: white;
+          padding-top: 15px;
+          padding-bottom: 5px;
         }
 
         .modal-actions button {
@@ -267,17 +278,20 @@ const PopupModal = ({ data, onClose }) => {
         }
 
         /* Mobile-specific styles */
-        @media (max-width: 480px) {
+        @media (max-width: 768px) {
           .modal-overlay {
-            padding: 10px;
+            padding: 5px;
+            align-items: flex-start;
           }
 
           .modal-content {
             padding: 15px;
+            max-height: 95vh;
+            margin: 5px;
           }
 
           .profile-image-container {
-            top: 45px;
+            top: 10px;
             right: 10px;
           }
 
@@ -287,7 +301,7 @@ const PopupModal = ({ data, onClose }) => {
           }
 
           h2 {
-            font-size: 1.2rem;
+            font-size: 1.1rem;
             padding-right: 60px;
             margin-bottom: 10px;
           }
@@ -306,25 +320,36 @@ const PopupModal = ({ data, onClose }) => {
           }
 
           .modal-actions {
-            flex-direction: column;
+            flex-direction: row;
             gap: 8px;
             margin-top: 15px;
+            justify-content: space-between;
           }
 
           .modal-actions button {
-            width: 100%;
-            padding: 8px 12px;
+            padding: 8px 10px;
+            font-size: 13px;
+            min-width: auto;
           }
         }
 
         /* Small mobile devices */
-        @media (max-width: 360px) {
+        @media (max-width: 480px) {
           .modal-content {
             padding: 12px;
           }
 
+          .modal-close-btn {
+            top: 5px;
+            right: 5px;
+            width: 25px;
+            height: 25px;
+            font-size: 16px;
+          }
+
           h2 {
-            font-size: 1.1rem;
+            font-size: 1rem;
+            padding-right: 50px;
           }
 
           .profile-image {
@@ -334,6 +359,29 @@ const PopupModal = ({ data, onClose }) => {
 
           .detail-item {
             font-size: 13px;
+          }
+
+          .modal-actions {
+            flex-direction: column;
+            gap: 8px;
+          }
+
+          .modal-actions button {
+            width: 100%;
+          }
+        }
+
+        @media (max-width: 360px) {
+          .modal-content {
+            padding: 10px;
+          }
+
+          h2 {
+            font-size: 0.95rem;
+          }
+
+          .detail-item {
+            font-size: 12px;
           }
         }
       `}</style>
@@ -361,7 +409,7 @@ const DetailItem = ({ label, value }) => (
         word-break: break-word;
       }
 
-      @media (max-width: 480px) {
+      @media (max-width: 768px) {
         .detail-item {
           font-size: 13px;
           margin-bottom: 6px;
@@ -371,12 +419,19 @@ const DetailItem = ({ label, value }) => (
         }
       }
 
+      @media (max-width: 480px) {
+        .detail-item {
+          flex-direction: column;
+        }
+        .detail-item strong {
+          min-width: auto;
+          margin-bottom: 2px;
+        }
+      }
+
       @media (max-width: 360px) {
         .detail-item {
           font-size: 12px;
-        }
-        .detail-item strong {
-          min-width: 90px;
         }
       }
     `}</style>
