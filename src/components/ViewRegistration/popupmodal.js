@@ -4,7 +4,6 @@ import { FaTimes, FaDownload, FaPrint } from "react-icons/fa";
 
 const PopupModal = ({ data, onClose }) => {
   const modalRef = useRef();
-  const contentRef = useRef();
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -97,55 +96,53 @@ const PopupModal = ({ data, onClose }) => {
           </div>
         )}
 
-        <div className="modal-scroll-container" ref={contentRef}>
-          <h2>Registration Details</h2>
+        <h2>Registration Details</h2>
 
-          <div className="detail-sections">
-            <div className="detail-section">
-              <h3>Personal Information</h3>
-              <DetailItem label="Full Name" value={data.name} />
-              <DetailItem label="Date of Birth" value={data.dateOfBirth} />
-              <DetailItem label="Age" value={data.age} />
-              <DetailItem label="Gender" value={data.gender || "Not specified"} />
-              <DetailItem label="Height" value={data.height ? `${data.height} cm` : "Not specified"} />
-              <DetailItem label="Weight" value={data.weight ? `${data.weight} kg` : "Not specified"} />
-            </div>
-
-            <div className="detail-section">
-              <h3>Contact Information</h3>
-              <DetailItem label="Email" value={data.email} />
-              <DetailItem label="Phone Number" value={data.phone} />
-              <DetailItem label="Alternate Number" value={data.optionalNumber || "Not provided"} />
-            </div>
-
-            <div className="detail-section">
-              <h3>Address Information</h3>
-              <DetailItem label="Temporary Address" value={data.temporaryAddress} />
-              <DetailItem label="Permanent Address" value={data.permanentAddress} />
-            </div>
-
-            <div className="detail-section">
-              <h3>Guardian Information</h3>
-              <DetailItem label="Guardian Name" value={data.parentName} />
-            </div>
-
-            <div className="detail-section">
-              <h3>Additional Information</h3>
-              <DetailItem label="Reason" value={data.category} />
-              <DetailItem label="Source" value={data.source} />
-              <DetailItem label="Registration Status" value={data.status} />
-              <DetailItem label="Payment Status" value={data.paymentStatus} />
-            </div>
+        <div className="detail-sections">
+          <div className="detail-section">
+            <h3>Personal Information</h3>
+            <DetailItem label="Full Name" value={data.name} />
+            <DetailItem label="Date of Birth" value={data.dateOfBirth} />
+            <DetailItem label="Age" value={data.age} />
+            <DetailItem label="Gender" value={data.gender || "Not specified"} />
+            <DetailItem label="Height" value={data.height ? `${data.height} cm` : "Not specified"} />
+            <DetailItem label="Weight" value={data.weight ? `${data.weight} kg` : "Not specified"} />
           </div>
 
-          <div className="modal-actions">
-            <button onClick={handleDownloadPDF}>
-              <FaDownload /> Download PDF
-            </button>
-            <button onClick={handlePrint}>
-              <FaPrint /> Print
-            </button>
+          <div className="detail-section">
+            <h3>Contact Information</h3>
+            <DetailItem label="Email" value={data.email} />
+            <DetailItem label="Phone Number" value={data.phone} />
+            <DetailItem label="Alternate Number" value={data.optionalNumber || "Not provided"} />
           </div>
+
+          <div className="detail-section">
+            <h3>Address Information</h3>
+            <DetailItem label="Temporary Address" value={data.temporaryAddress} />
+            <DetailItem label="Permanent Address" value={data.permanentAddress} />
+          </div>
+
+          <div className="detail-section">
+            <h3>Guardian Information</h3>
+            <DetailItem label="Guardian Name" value={data.parentName} />
+          </div>
+
+          <div className="detail-section">
+            <h3>Additional Information</h3>
+            <DetailItem label="Reason" value={data.category} />
+            <DetailItem label="Source" value={data.source} />
+            <DetailItem label="Registration Status" value={data.status} />
+            <DetailItem label="Payment Status" value={data.paymentStatus} />
+          </div>
+        </div>
+
+        <div className="modal-actions">
+          <button onClick={handleDownloadPDF}>
+            <FaDownload /> Download PDF
+          </button>
+          <button onClick={handlePrint}>
+            <FaPrint /> Print
+          </button>
         </div>
       </div>
 
@@ -161,32 +158,26 @@ const PopupModal = ({ data, onClose }) => {
           justify-content: center;
           align-items: center;
           z-index: 1000;
-          padding: 20px 10px;
+          padding: 10px;
           box-sizing: border-box;
-          -webkit-overflow-scrolling: touch;
+          overflow: auto;
         }
 
         .modal-content {
           background-color: #fff;
+          padding: 20px;
           border-radius: 8px;
           width: 100%;
           max-width: 700px;
-          max-height: 85vh;
+          max-height: 90vh;
+          overflow-y: auto;
           box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
           position: relative;
-          display: flex;
-          flex-direction: column;
-        }
-
-        .modal-scroll-container {
-          overflow-y: auto;
-          -webkit-overflow-scrolling: touch;
-          padding: 20px;
-          flex: 1;
+          margin: 10px;
         }
 
         .modal-close-btn {
-          position: absolute;
+          position: sticky;
           top: 10px;
           right: 10px;
           background: #fff;
@@ -200,8 +191,10 @@ const PopupModal = ({ data, onClose }) => {
           display: flex;
           align-items: center;
           justify-content: center;
+          float: right;
           border-radius: 50%;
           box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+          margin-left: auto;
         }
 
         .profile-image-container {
@@ -256,7 +249,11 @@ const PopupModal = ({ data, onClose }) => {
           gap: 10px;
           margin-top: 20px;
           flex-wrap: wrap;
+          position: sticky;
+          bottom: 0;
+          background: white;
           padding-top: 15px;
+          padding-bottom: 5px;
         }
 
         .modal-actions button {
@@ -280,36 +277,19 @@ const PopupModal = ({ data, onClose }) => {
           background-color: #0044CC;
         }
 
-        /* iOS-specific fixes */
-        @supports (-webkit-touch-callout: none) {
-          .modal-overlay {
-            align-items: flex-start;
-            padding-top: 30px;
-            padding-bottom: 30px;
-          }
-          
-          .modal-content {
-            max-height: calc(100vh - 60px);
-          }
-          
-          .modal-scroll-container {
-            padding-bottom: 30px;
-          }
-        }
-
         /* Mobile-specific styles */
         @media (max-width: 768px) {
           .modal-overlay {
-            padding: 15px 10px;
-            align-items: flex-start;
+            padding: 5px;
+            align-items: center;
+            justify-content: center;
           }
 
           .modal-content {
-            max-height: calc(100vh - 30px);
-          }
-
-          .modal-scroll-container {
             padding: 15px;
+            max-height: 70vh;
+            margin: 5px;
+            overflow-y: auto;
           }
 
           .profile-image-container {
@@ -355,17 +335,11 @@ const PopupModal = ({ data, onClose }) => {
           }
         }
 
+        /* Small mobile devices */
         @media (max-width: 480px) {
-          .modal-overlay {
-            padding: 10px 5px;
-          }
-
           .modal-content {
-            max-height: calc(100vh - 20px);
-          }
-
-          .modal-scroll-container {
             padding: 12px;
+            max-height: 65vh;
           }
 
           .modal-close-btn {
@@ -386,6 +360,10 @@ const PopupModal = ({ data, onClose }) => {
             height: 40px;
           }
 
+          .detail-item {
+            font-size: 13px;
+          }
+
           .modal-actions {
             flex-direction: column;
             gap: 8px;
@@ -399,10 +377,15 @@ const PopupModal = ({ data, onClose }) => {
         @media (max-width: 360px) {
           .modal-content {
             padding: 10px;
+            max-height: 60vh;
           }
 
           h2 {
             font-size: 0.95rem;
+          }
+
+          .detail-item {
+            font-size: 12px;
           }
         }
       `}</style>
