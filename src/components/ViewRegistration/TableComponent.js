@@ -723,7 +723,7 @@ const TableComponent = () => {
         .export-btn {
           padding: 10px 16px;
           border: none;
-          background-color: #4CAF50;
+          background-color: #2e7d32;
           color: white;
           border-radius: 8px;
           cursor: pointer;

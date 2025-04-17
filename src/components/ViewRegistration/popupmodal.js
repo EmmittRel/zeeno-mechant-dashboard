@@ -261,7 +261,7 @@ const PopupModal = ({ data, onClose }) => {
           align-items: center;
           gap: 8px;
           padding: 10px 15px;
-          background-color: #0062FF;
+          background-color: #2e7d32;
           color: white;
           border: none;
           border-radius: 6px;
